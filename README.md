@@ -1,6 +1,6 @@
 # Binam — Campus Lost & Found Platform
 
-Binam is a lost-and-found service designed as a modern alternative to the common “found & lost” Telegram groups. Instead of scrolling through chat history, users can browse a **campus map** with location pins and quickly find lost/found items by **place, tags, and search**. :contentReference[oaicite:0]{index=0}
+Binam is a lost-and-found service designed as a modern alternative to the common “lost & found” Telegram groups. Instead of scrolling through chat history, users can browse a **campus map** with location pins and quickly find lost/found items by **place, tags, and search**. :contentReference[oaicite:0]{index=0}
 
 This repository is the public course/project repo for **System Analysis & Design** and is intended for both **academic evaluation** and future product use.
 
