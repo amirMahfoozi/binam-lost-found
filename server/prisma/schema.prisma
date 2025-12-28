@@ -1,0 +1,120 @@
+// prisma/schema.prisma
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  items        Item[]
+  comments     Comment[]
+  reports      Report[]  @relation("UserReports")
+}
+
+model EmailOtp {
+  id        String   @id @default(uuid())
+  email     String
+  otpCode   String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+enum ItemStatus {
+  LOST
+  FOUND
+}
+
+model Item {
+  id          String      @id @default(uuid())
+  user        User        @relation(fields: [userId], references: [id])
+  userId      String
+  title       String
+  description String
+  status      ItemStatus
+  latitude    Float
+  longitude   Float
+  isDeleted   Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  images      ItemImage[]
+  tags        ItemTag[]
+  comments    Comment[]
+  reports     Report[]    @relation("ItemReports")
+}
+
+model ItemImage {
+  id       String @id @default(uuid())
+  item     Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  itemId   String
+  url      String
+  position Int    @default(0)
+}
+
+model Tag {
+  id    Int       @id @default(autoincrement())
+  name  String    @unique
+  items ItemTag[]
+}
+
+model ItemTag {
+  item   Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  itemId String
+  tag    Tag  @relation(fields: [tagId], references: [id])
+  tagId  Int
+
+  @@id([itemId, tagId])
+}
+
+model Comment {
+  id        String    @id @default(uuid())
+  item      Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  itemId    String
+  user      User      @relation(fields: [userId], references: [id])
+  userId    String
+  parent    Comment?  @relation("CommentToReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  parentId  String?
+  replies   Comment[] @relation("CommentToReplies")
+  body      String
+  isDeleted Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  reports   Report[]  @relation("CommentReports")
+}
+
+enum ReportTargetType {
+  ITEM
+  COMMENT
+}
+
+model Report {
+  id         String           @id @default(uuid())
+  reporter   User             @relation("UserReports", fields: [reporterId], references: [id])
+  reporterId String
+
+  targetType ReportTargetType
+
+  item       Item?            @relation("ItemReports", fields: [itemId], references: [id])
+  itemId     String?
+
+  comment    Comment?         @relation("CommentReports", fields: [commentId], references: [id])
+  commentId  String?
+
+  reason     String
+  createdAt  DateTime         @default(now())
+
+  @@unique([reporterId, targetType, itemId, commentId])
+}
