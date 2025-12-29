@@ -1,120 +1,87 @@
-// prisma/schema.prisma
-datasource db {
-  provider = "postgresql"
-}
-
 generator client {
-  provider     = "prisma-client"
+  provider     = "prisma-client-js"
   output       = "../src/generated/prisma"
   moduleFormat = "cjs"
 }
 
-
-model User {
-  id           String    @id @default(uuid())
-  email        String    @unique
-  passwordHash String
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-
-  items        Item[]
-  comments     Comment[]
-  reports      Report[]  @relation("UserReports")
+datasource db {
+  provider = "postgresql"
 }
 
-model EmailOtp {
-  id        String   @id @default(uuid())
-  email     String
-  otpCode   String
-  expiresAt DateTime
-  used      Boolean  @default(false)
-  createdAt DateTime @default(now())
+model comments {
+  cid          Int       @id @default(autoincrement())
+  iid          Int?
+  uid          Int?
+  comment_text String
+  report_count Int?      @default(0)
+  date_added   DateTime? @default(now()) @db.Timestamp(6)
+  items        items?    @relation(fields: [iid], references: [iid], onDelete: Cascade, onUpdate: NoAction)
+  users        users?    @relation(fields: [uid], references: [uid], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([iid], map: "idx_comments_iid")
 }
 
-enum ItemStatus {
-  LOST
-  FOUND
+model images {
+  imid        Int       @id @default(autoincrement())
+  iid         Int?
+  image_url   String
+  uploaded_at DateTime? @default(now()) @db.Timestamp(6)
+  items       items?    @relation(fields: [iid], references: [iid], onDelete: Cascade, onUpdate: NoAction)
 }
 
-model Item {
-  id          String      @id @default(uuid())
-  user        User        @relation(fields: [userId], references: [id])
-  userId      String
+model item_tags {
+  iid   Int
+  tid   Int
+  items items @relation(fields: [iid], references: [iid], onDelete: Cascade, onUpdate: NoAction)
+  tags  tags  @relation(fields: [tid], references: [tid], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([iid, tid])
+  @@index([iid], map: "idx_item_tags_iid")
+  @@index([tid], map: "idx_item_tags_tid")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model items {
+  iid         Int         @id @default(autoincrement())
+  uid         Int?
+  type        String
   title       String
   description String
-  status      ItemStatus
-  latitude    Float
-  longitude   Float
-  isDeleted   Boolean     @default(false)
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  latitude    Decimal     @db.Decimal(9, 6)
+  longitude   Decimal     @db.Decimal(9, 6)
+  add_date    DateTime?   @default(now()) @db.Timestamp(6)
+  comments    comments[]
+  images      images[]
+  item_tags   item_tags[]
+  users       users?      @relation(fields: [uid], references: [uid], onDelete: Cascade, onUpdate: NoAction)
 
-  images      ItemImage[]
-  tags        ItemTag[]
-  comments    Comment[]
-  reports     Report[]    @relation("ItemReports")
+  @@index([add_date(sort: Desc)], map: "idx_items_add_date")
+  @@index([latitude, longitude], map: "idx_items_lat_lng")
+  @@index([type], map: "idx_items_type")
 }
 
-model ItemImage {
-  id       String @id @default(uuid())
-  item     Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  itemId   String
-  url      String
-  position Int    @default(0)
+model otps {
+  oid        Int      @id @default(autoincrement())
+  uid        Int?
+  otp_code   String
+  expires_at DateTime @db.Timestamp(6)
+  users      users?   @relation(fields: [uid], references: [uid], onDelete: Cascade, onUpdate: NoAction)
 }
 
-model Tag {
-  id    Int       @id @default(autoincrement())
-  name  String    @unique
-  items ItemTag[]
+model tags {
+  tid       Int         @id @default(autoincrement())
+  tagname   String      @unique
+  color     String?
+  item_tags item_tags[]
 }
 
-model ItemTag {
-  item   Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  itemId String
-  tag    Tag  @relation(fields: [tagId], references: [id])
-  tagId  Int
-
-  @@id([itemId, tagId])
-}
-
-model Comment {
-  id        String    @id @default(uuid())
-  item      Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  itemId    String
-  user      User      @relation(fields: [userId], references: [id])
-  userId    String
-  parent    Comment?  @relation("CommentToReplies", fields: [parentId], references: [id], onDelete: Cascade)
-  parentId  String?
-  replies   Comment[] @relation("CommentToReplies")
-  body      String
-  isDeleted Boolean   @default(false)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-
-  reports   Report[]  @relation("CommentReports")
-}
-
-enum ReportTargetType {
-  ITEM
-  COMMENT
-}
-
-model Report {
-  id         String           @id @default(uuid())
-  reporter   User             @relation("UserReports", fields: [reporterId], references: [id])
-  reporterId String
-
-  targetType ReportTargetType
-
-  item       Item?            @relation("ItemReports", fields: [itemId], references: [id])
-  itemId     String?
-
-  comment    Comment?         @relation("CommentReports", fields: [commentId], references: [id])
-  commentId  String?
-
-  reason     String
-  createdAt  DateTime         @default(now())
-
-  @@unique([reporterId, targetType, itemId, commentId])
+model users {
+  uid                Int        @id @default(autoincrement())
+  email              String     @unique
+  password           String
+  username           String
+  registeration_date DateTime?  @default(now()) @db.Timestamp(6)
+  comments           comments[]
+  items              items[]
+  otps               otps[]
 }
