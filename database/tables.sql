@@ -10,7 +10,7 @@ CREATE TABLE users (
 
 CREATE TABLE otps (
   oid SERIAL PRIMARY KEY,
-  uid INTEGER REFERENCES users(uid) ON DELETE CASCADE,
+  email TEXT NOT NULL,
   otp_code TEXT NOT NULL,
   expires_at TIMESTAMP NOT NULL
 );
@@ -79,6 +79,10 @@ ON comments(iid);
 	--location filter
 CREATE INDEX idx_items_lat_lng
 ON items(latitude, longitude);
+
+	--email otps
+CREATE INDEX idx_otps_email
+ON otps(email);
 
 
 
