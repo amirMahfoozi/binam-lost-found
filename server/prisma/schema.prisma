@@ -66,6 +66,10 @@ model otps {
   otp_code   String
   expires_at DateTime @db.Timestamp(6)
 
+  // save password and username for later
+  pending_username String
+  pending_password String
+
   @@index([email], map: "idx_otps_email")
 }
 
