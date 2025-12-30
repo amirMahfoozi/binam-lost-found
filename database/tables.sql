@@ -12,7 +12,9 @@ CREATE TABLE otps (
   oid SERIAL PRIMARY KEY,
   email TEXT NOT NULL,
   otp_code TEXT NOT NULL,
-  expires_at TIMESTAMP NOT NULL
+  expires_at TIMESTAMP NOT NULL,
+  pending_username TEXT NOT NULL,
+  pending_password TEXT NOT NULL
 );
 
 CREATE TABLE items (
