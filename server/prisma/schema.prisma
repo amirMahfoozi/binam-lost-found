@@ -62,10 +62,11 @@ model items {
 
 model otps {
   oid        Int      @id @default(autoincrement())
-  uid        Int?
+  email      String
   otp_code   String
   expires_at DateTime @db.Timestamp(6)
-  users      users?   @relation(fields: [uid], references: [uid], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([email], map: "idx_otps_email")
 }
 
 model tags {
@@ -83,5 +84,4 @@ model users {
   registeration_date DateTime?  @default(now()) @db.Timestamp(6)
   comments           comments[]
   items              items[]
-  otps               otps[]
 }
