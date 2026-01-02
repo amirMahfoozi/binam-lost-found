@@ -1,0 +1,145 @@
+.add-item-root {
+    display: flex;
+    justify-content: center;
+    padding: 24px;
+    background: #fff;
+    color: #000;
+  }
+  
+  .add-item-form {
+    width: 100%;
+    max-width: 640px;
+    border: 1px solid #000;
+    padding: 20px;
+    box-sizing: border-box;
+    border-radius: 6px;
+    background: #fff;
+  }
+  
+  .form-title {
+    margin: 0 0 16px 0;
+    font-size: 20px;
+    text-align: center;
+  }
+  
+  .label {
+    display: block;
+    font-weight: 600;
+    margin: 12px 0 6px;
+  }
+  
+  .input, .textarea, .file-input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 8px 10px;
+    border: 1px solid #000;
+    border-radius: 4px;
+    background: #fff;
+    color: #000;
+    font-size: 14px;
+  }
+  
+  .textarea {
+    min-height: 80px;
+    resize: vertical;
+  }
+  
+  .row {
+    display: flex;
+    gap: 12px;
+  }
+  
+  .col { flex: 1; }
+  
+  .type-options {
+    display: flex;
+    gap: 12px;
+    margin-top: 6px;
+    align-items: center;
+  }
+  
+  .type-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid #000;
+    border-radius: 20px;
+    cursor: pointer;
+    background: #fff;
+  }
+  
+  .type-selected {
+    background: #000;
+    color: #fff;
+  }
+  
+  .type-label input {
+    display: inline-block;
+  }
+  
+  .type-text {
+    font-weight: 600;
+    font-size: 13px;
+  }
+  
+  .tags {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 6px;
+  }
+  
+  .tag-btn {
+    background: #fff;
+    color: #000;
+    border: 1px solid #000;
+    padding: 6px 10px;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  
+  .tag-btn:hover { opacity: 0.9; }
+  
+  .tag-selected {
+    background: #000;
+    color: #fff;
+  }
+  
+  .actions {
+    margin-top: 16px;
+    display: flex;
+    justify-content: flex-end;
+  }
+  
+  .submit-btn {
+    background: #000;
+    color: #fff;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  
+  .submit-btn[disabled] {
+    opacity: 0.6;
+    cursor: default;
+  }
+  
+  .message {
+    margin-top: 12px;
+    padding: 8px;
+    border: 1px solid #000;
+    border-radius: 4px;
+    background: #fff;
+    color: #000;
+  }
+  
+  @media (max-width: 480px) {
+    .add-item-form { padding: 12px; }
+    .row { flex-direction: column; }
+    .actions { justify-content: center; }
+  }
+  
