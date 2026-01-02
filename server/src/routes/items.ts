@@ -2,195 +2,17 @@
 import { Router } from "express";
 import { prisma } from "../db";
 import { requireAuth, AuthRequest } from "../middleware/auth";
-import { ItemStatus } from "../generated/prisma/client";
 
 const router = Router();
 
-/**
- * Helper: parse comma-separated tag IDs into number[]
- */
-function parseTagIds(tagIdsParam: any): number[] {
-  if (!tagIdsParam || typeof tagIdsParam !== "string") return [];
-  return tagIdsParam
-    .split(",")
-    .map((s) => parseInt(s.trim(), 10))
-    .filter((n) => !Number.isNaN(n));
-}
-
-/**
- * Helper: parse bbox=minLat,minLng,maxLat,maxLng
- */
-function parseBbox(bboxParam: any) {
-  if (!bboxParam || typeof bboxParam !== "string") return null;
-  const parts = bboxParam.split(",").map((p) => parseFloat(p.trim()));
-  if (parts.length !== 4 || parts.some((v) => Number.isNaN(v))) return null;
-
-  const [minLat, minLng, maxLat, maxLng] = parts;
-  return { minLat, minLng, maxLat, maxLng };
-}
-
-// GET /items
-// query: q, status, tagIds, bbox, page, limit
-router.get("/", async (req, res, next) => {
-  try {
-    const {
-      q,
-      status,
-      tagIds,
-      bbox,
-      page = "1",
-      limit = "50",
-    } = req.query as {
-      q?: string;
-      status?: string;
-      tagIds?: string;
-      bbox?: string;
-      page?: string;
-      limit?: string;
-    };
-
-    const pageNum = Math.max(parseInt(page || "1", 10) || 1, 1);
-    const take = Math.min(parseInt(limit || "50", 10) || 50, 100);
-    const skip = (pageNum - 1) * take;
-
-    const where: any = {
-      isDeleted: false,
-    };
-
-    // Status filter
-    if (status === "LOST" || status === "FOUND") {
-      where.status = status as ItemStatus;
-    }
-
-    // Text search filter (simple ILIKE on title/description)
-    if (q && q.trim() !== "") {
-      where.OR = [
-        { title: { contains: q, mode: "insensitive" } },
-        { description: { contains: q, mode: "insensitive" } },
-      ];
-    }
-
-    // Tag filter
-    const tagIdsArr = parseTagIds(tagIds);
-    if (tagIdsArr.length > 0) {
-      where.tags = {
-        some: {
-          tagId: { in: tagIdsArr },
-        },
-      };
-    }
-
-    // Bbox filter
-    const bboxObj = parseBbox(bbox);
-    if (bboxObj) {
-      where.AND = where.AND || [];
-      where.AND.push(
-        {
-          latitude: {
-            gte: bboxObj.minLat,
-            lte: bboxObj.maxLat,
-          },
-        },
-        {
-          longitude: {
-            gte: bboxObj.minLng,
-            lte: bboxObj.maxLng,
-          },
-        }
-      );
-    }
-
-    const [items, total] = await Promise.all([
-      prisma.item.findMany({
-        where,
-        skip,
-        take,
-        orderBy: { createdAt: "desc" },
-        include: {
-          images: {
-            orderBy: { position: "asc" },
-          },
-          tags: {
-            include: {
-              tag: true,
-            },
-          },
-          user: {
-            select: {
-              id: true,
-              email: true, // later you can hide part of it
-            },
-          },
-        },
-      }),
-      prisma.item.count({ where }),
-    ]);
-
-    res.json({
-      items: items.map((item) => ({
-        ...item,
-        tags: item.tags.map((it) => it.tag),
-      })),
-      pagination: {
-        page: pageNum,
-        limit: take,
-        total,
-      },
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// GET /items/:id
-router.get("/:id", async (req, res, next) => {
-  try {
-    const { id } = req.params;
-
-    const item = await prisma.item.findFirst({
-      where: {
-        id,
-        isDeleted: false,
-      },
-      include: {
-        images: {
-          orderBy: { position: "asc" },
-        },
-        tags: {
-          include: {
-            tag: true,
-          },
-        },
-        user: {
-          select: {
-            id: true,
-            email: true,
-          },
-        },
-      },
-    });
-
-    if (!item) {
-      return res.status(404).json({ error: "Item not found" });
-    }
-
-    res.json({
-      ...item,
-      tags: item.tags.map((it) => it.tag),
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// POST /items  (auth required)
-// Body: { title, description, status, latitude, longitude, tagIds, imageUrls }
-router.post("/", requireAuth, async (req: AuthRequest, res, next) => {
+// POST /items/addItem  (auth required)
+// Body: { title, description, type, latitude, longitude, tagIds, imageUrls }
+router.post("/addItem", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const {
       title,
       description,
-      status,
+      type,
       latitude,
       longitude,
       tagIds,
@@ -198,7 +20,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res, next) => {
     } = req.body as {
       title?: string;
       description?: string;
-      status?: string;
+      type?: string;
       latitude?: number;
       longitude?: number;
       tagIds?: number[];
@@ -208,7 +30,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res, next) => {
     if (
       !title ||
       !description ||
-      !status ||
+      !type ||
       typeof latitude !== "number" ||
       typeof longitude !== "number"
     ) {
@@ -218,8 +40,8 @@ router.post("/", requireAuth, async (req: AuthRequest, res, next) => {
       });
     }
 
-    if (status !== "LOST" && status !== "FOUND") {
-      return res.status(400).json({ error: "status must be LOST or FOUND" });
+    if (type !== "LOST" && type !== "FOUND") {
+      return res.status(400).json({ error: "status must be Lost or Found" });
     }
 
     const userId = req.user!.userId;
@@ -228,136 +50,127 @@ router.post("/", requireAuth, async (req: AuthRequest, res, next) => {
 
     const imagesArr = Array.isArray(imageUrls) ? imageUrls : [];
 
-    const item = await prisma.item.create({
+    const item = await prisma.items.create({
       data: {
-        userId,
-        title,
-        description,
-        status: status as ItemStatus,
-        latitude,
-        longitude,
-        tags: {
-          create: tagIdsArr.map((tagId) => ({
-            tag: {
-              connect: { id: tagId },
-            },
+        uid: userId,
+        type: type.toLowerCase(),
+        title: title,
+        description: description,
+        latitude: latitude,
+        longitude: longitude,
+
+        images: {
+          create: imagesArr.map((url) => ({
+            image_url: url,
           })),
         },
-        images: {
-          create: imagesArr.map((url, index) => ({
-            url,
-            position: index,
+
+        item_tags: {
+          create: tagIdsArr.map((tagId) => ({
+            tags: {
+              connect: { tid: tagId },
+            },
           })),
         },
       },
       include: {
-        images: {
-          orderBy: { position: "asc" },
-        },
-        tags: {
+        images: true,
+        item_tags: {
           include: {
-            tag: true,
+            tags: true,
           },
         },
       },
     });
 
+
     res.status(201).json({
       ...item,
-      tags: item.tags.map((it) => it.tag),
+      tags: item.item_tags.map((it) => it.tags),
     });
   } catch (err) {
     next(err);
   }
 });
 
-// PUT /items/:id  (auth + owner)
-// For now: allow updating title, description, status, latitude, longitude
-router.put("/:id", requireAuth, async (req: AuthRequest, res, next) => {
+// GET /items/count
+// no queries yet
+router.get("/count", async (req, res, next) => {
   try {
-    const { id } = req.params;
-    const userId = req.user!.userId;
+    const count = await prisma.items.count();
 
-    const existing = await prisma.item.findUnique({
-      where: { id },
+    res.status(200).json({
+      count,
     });
+  } catch (err) {
+    next(err);
+  }
+});
 
-    if (!existing || existing.isDeleted) {
-      return res.status(404).json({ error: "Item not found" });
-    }
-
-    if (existing.userId !== userId) {
-      return res.status(403).json({ error: "Not allowed to edit this item" });
-    }
-
+// GET /items
+// query: page, limit
+router.get("/", async (req, res, next) => {
+  try {
     const {
-      title,
-      description,
-      status,
-      latitude,
-      longitude,
-    } = req.body as {
-      title?: string;
-      description?: string;
-      status?: string;
-      latitude?: number;
-      longitude?: number;
+      page,
+      limit,
+    } = req.query as {
+      page?: string;
+      limit?: string;
     };
 
-    const data: any = {};
+    const pageNum = Math.max(parseInt(page || "1", 10) || 1, 1);
+    const take = Math.min(parseInt(limit || "50", 10) || 50, 100);
+    const skip = (pageNum - 1) * take;
 
-    if (typeof title === "string") data.title = title;
-    if (typeof description === "string") data.description = description;
-    if (typeof latitude === "number") data.latitude = latitude;
-    if (typeof longitude === "number") data.longitude = longitude;
+    const items = await prisma.items.findMany({
+      skip: skip,
+      take: take,
+      orderBy: { add_date: "desc" },
+      select: {
+        title: true,
+        description: true,
+        type: true,
+        add_date: true,
 
-    if (typeof status === "string") {
-      if (status !== "LOST" && status !== "FOUND") {
-        return res
-          .status(400)
-          .json({ error: "status must be LOST or FOUND if provided" });
-      }
-      data.status = status as ItemStatus;
-    }
+        images: {
+          orderBy: { uploaded_at: "asc" },
+          take: 1,
+          select: {
+            image_url: true,
+          },
+        },
 
-    const updated = await prisma.item.update({
-      where: { id },
-      data,
+        users: {
+          select: {
+            uid: true,
+            email: true,
+            username: true,
+          },
+        },
+      },
     });
 
-    res.json(updated);
-  } catch (err) {
-    next(err);
-  }
-});
 
-// DELETE /items/:id  (auth + owner, soft delete)
-router.delete("/:id", requireAuth, async (req: AuthRequest, res, next) => {
-  try {
-    const { id } = req.params;
-    const userId = req.user!.userId;
-
-    const existing = await prisma.item.findUnique({
-      where: { id },
+    res.status(200).json({
+      items: items.map((item) => ({
+        title: item.title,
+        description: item.description,
+        type: item.type,
+        add_date: item.add_date,
+        image: item.images[0]?.image_url ?? null,
+        user: item.users,
+      })),
+      pagination: {
+        page: pageNum,
+        limit: take,
+      },
     });
 
-    if (!existing || existing.isDeleted) {
-      return res.status(404).json({ error: "Item not found" });
-    }
-
-    if (existing.userId !== userId) {
-      return res.status(403).json({ error: "Not allowed to delete this item" });
-    }
-
-    await prisma.item.update({
-      where: { id },
-      data: { isDeleted: true },
-    });
-
-    res.json({ success: true });
   } catch (err) {
     next(err);
   }
 });
 
 export default router;
+

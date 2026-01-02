@@ -5,10 +5,7 @@ import path from "path";
 
 import healthRouter from "./routes/health";
 import authRouter from "./routes/auth";
-import tagsRouter from "./routes/tags";
 import itemsRouter from "./routes/items";
-import commentsRouter from "./routes/comments";
-import reportsRouter from "./routes/reports";
 import uploadRouter from "./routes/upload";
 import { errorHandler } from "./middleware/errorHandler";
 
@@ -27,10 +24,7 @@ export function createApp() {
   // Routes
   app.use("/health", healthRouter);
   app.use("/auth", authRouter);
-  app.use("/tags", tagsRouter);
   app.use("/items", itemsRouter);
-  app.use("/", commentsRouter);
-  app.use("/reports", reportsRouter);
   app.use("/upload", uploadRouter);
 
   // 404 handler
@@ -43,3 +37,4 @@ export function createApp() {
 
   return app;
 }
+
