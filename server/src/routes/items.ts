@@ -93,4 +93,84 @@ router.post("/addItem", requireAuth, async (req: AuthRequest, res, next) => {
   }
 });
 
+// GET /items/count
+// no queries yet
+router.get("/count", async (req, res, next) => {
+  try {
+    const count = await prisma.items.count();
+
+    res.status(200).json({
+      count,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /items
+// query: page, limit
+router.get("/", async (req, res, next) => {
+  try {
+    const {
+      page,
+      limit,
+    } = req.query as {
+      page?: string;
+      limit?: string;
+    };
+
+    const pageNum = Math.max(parseInt(page || "1", 10) || 1, 1);
+    const take = Math.min(parseInt(limit || "50", 10) || 50, 100);
+    const skip = (pageNum - 1) * take;
+
+    const items = await prisma.items.findMany({
+      skip: skip,
+      take: take,
+      orderBy: { add_date: "desc" },
+      select: {
+        title: true,
+        description: true,
+        type: true,
+        add_date: true,
+
+        images: {
+          orderBy: { uploaded_at: "asc" },
+          take: 1,
+          select: {
+            image_url: true,
+          },
+        },
+
+        users: {
+          select: {
+            uid: true,
+            email: true,
+            username: true,
+          },
+        },
+      },
+    });
+
+
+    res.status(200).json({
+      items: items.map((item) => ({
+        title: item.title,
+        description: item.description,
+        type: item.type,
+        add_date: item.add_date,
+        image: item.images[0]?.image_url ?? null,
+        user: item.users,
+      })),
+      pagination: {
+        page: pageNum,
+        limit: take,
+      },
+    });
+
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
+
