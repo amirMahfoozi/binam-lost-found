@@ -4,8 +4,10 @@ import { RegisterForm } from "./components/RegisterForm";
 import { EmailVerification } from "./components/EmailVerification";
 import { Header } from "./components/Header";
 import { PackageCheck, FileText, Bell } from "lucide-react";
+import AddItem from "./components/AddItem";
 
-type ViewType = "login" | "register" | "verify-email" | "dashboard";
+// type ViewType = "login" | "register" | "verify-email" | "dashboard";
+type ViewType = "login" | "register" | "verify-email" | "dashboard" | "add-item";
 
 export default function App() {
   const [currentView, setCurrentView] = useState<ViewType>("login");
@@ -115,6 +117,13 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {currentView === "add-item" && (
+            <AddItem/>
+          )}
+
+
+          <button onClick={() => setCurrentView("add-item")}>a</button>
         </div>
       </div>
     </div>
