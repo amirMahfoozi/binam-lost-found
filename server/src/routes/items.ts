@@ -1,7 +1,7 @@
 // src/routes/items.ts
 import { Router } from "express";
 import { prisma } from "../db";
-import { requireAuth, AuthRequest } from "../middleware/auth";
+import { requireAuth, AuthRequest, optionalAuth } from "../middleware/auth";
 
 const router = Router();
 
@@ -128,6 +128,7 @@ router.get("/", async (req, res, next) => {
       take: take,
       orderBy: { add_date: "desc" },
       select: {
+        iid: true,
         title: true,
         description: true,
         type: true,
@@ -144,7 +145,6 @@ router.get("/", async (req, res, next) => {
         users: {
           select: {
             uid: true,
-            email: true,
             username: true,
           },
         },
@@ -154,6 +154,7 @@ router.get("/", async (req, res, next) => {
 
     res.status(200).json({
       items: items.map((item) => ({
+        iid: item.iid,
         title: item.title,
         description: item.description,
         type: item.type,
@@ -222,7 +223,207 @@ router.get("/:id", optionalAuth, async (req: AuthRequest, res, next) => {
   }
 });
 
+// PATCH /items/:id  (auth + owner)
+// Allow updating title, description, status, latitude, longitude, tagIds, addImageUrls, removeImageIds
+router.patch("/:id", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ error: "Invalid item id" });
+    }
+
+    const userId = req.user!.userId;
+
+    const existing = await prisma.items.findUnique({
+      where: { iid: id },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: "Item not found" });
+    }
+
+    if (existing.uid !== userId) {
+      return res.status(403).json({ error: "Not allowed to edit this item" });
+    }
+
+    const {
+      title,
+      description,
+      type,
+      latitude,
+      longitude,
+      tagIds,
+      addImageUrls,
+      removeImageIds,
+    } = req.body as {
+      title?: string;
+      description?: string;
+      type?: string;
+      latitude?: number;
+      longitude?: number;
+      tagIds?: number[];
+      addImageUrls?: string[];
+      removeImageIds?: number[];
+    };
+
+    // Check validity of fields
+    const itemData: any = {};
+
+    if (typeof title === "string"){
+      if (!title || title === "") {
+        return res.status(400).json({ error: "missing title" });
+      }
+      itemData.title = title;
+    }
+
+    if (typeof description === "string"){
+      if (!description || description === "") {
+        return res.status(400).json({ error: "missing description" });
+      }
+      itemData.description = description;
+    }
+
+    if (typeof latitude === "number") {
+      if (latitude < -90 || latitude > 90) {
+        return res.status(400).json({ error: "Invalid latitude" });
+      }
+      itemData.latitude = latitude;
+    }
+
+    if (typeof longitude === "number") {
+      if (longitude < -180 || longitude > 180) {
+        return res.status(400).json({ error: "Invalid longitude" });
+      }
+      itemData.longitude = longitude;
+    }
+
+    if (typeof type === "string") {
+      const normalized = type.toLowerCase();
+      if (normalized !== "lost" && normalized !== "found") {
+        return res.status(400).json({ error: "type must be LOST or FOUND" });
+      }
+      itemData.type = normalized;
+    }
+
+    if (tagIds!.length === 0) {
+      throw new Error("At least one tag should be selected");
+    }
+
+    // Edit item in database
+    await prisma.$transaction(async (tx) => {
+      // Add item
+      if (Object.keys(itemData).length > 0) {
+        await tx.items.update({
+          where: { iid: id },
+          data: itemData,
+        });
+      }
+
+      if (Array.isArray(tagIds)) {
+        // Ensure tags exist
+        const validTags = await tx.tags.findMany({
+          where: { tid: { in: tagIds } },
+          select: { tid: true },
+        });
+
+        if (validTags.length !== tagIds.length) {
+          throw new Error("One or more tags do not exist");
+        }
+
+        // Delete old tags
+        await tx.item_tags.deleteMany({
+          where: { iid: id },
+        });
+
+        // Add new Tags
+        if (tagIds.length > 0) {
+          await tx.item_tags.createMany({
+            data: tagIds.map((tid) => ({
+              iid: id,
+              tid,
+            })),
+          });
+        }
+      }
+
+      // Add new image urls
+      if (Array.isArray(addImageUrls) && addImageUrls.length > 0) {
+        await tx.images.createMany({
+          data: addImageUrls.map((url) => ({
+            iid: id,
+            image_url: url,
+          })),
+        });
+      }
+
+      // Delete remove image ids
+      if (Array.isArray(removeImageIds) && removeImageIds.length > 0) {
+        await tx.images.deleteMany({
+          where: {
+            imid: { in: removeImageIds },
+            iid: id,
+          },
+        });
+      }
+    });
+
+    // Send updated info back
+    const updated = await prisma.items.findUnique({
+      where: { iid: id },
+      include: {
+        images: {
+          orderBy: { uploaded_at: "asc" },
+        },
+        item_tags: {
+          include: { tags: true },
+        },
+        users: {
+          select: { uid: true, username: true },
+        },
+      },
+    });
+
+    res.json({
+      ...updated,
+      tags: updated!.item_tags.map((it) => it.tags),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /items/:id  (auth + owner, hard delete)
+// params: id
+router.delete("/:id", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ error: "Invalid item id" });
+    }
+
+    const userId = req.user!.userId;
+
+    const existing = await prisma.items.findUnique({
+      where: { iid: id },
+    });
+
+    if (!existing) {
+      return res.status(404).json({ error: "Item not found" });
+    }
+
+    if (existing.uid !== userId) {
+      return res.status(403).json({ error: "Not allowed to delete this item" });
+    }
+
+    // Hard delete item cascades to images, comments, item_tags
+    await prisma.items.delete({
+      where: { iid: id },
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
 
 export default router;
-
-
