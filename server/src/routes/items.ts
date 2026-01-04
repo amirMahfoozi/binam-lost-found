@@ -172,5 +172,57 @@ router.get("/", async (req, res, next) => {
   }
 });
 
+// GET /items/:id (optional auth to check access)
+// params: id
+router.get("/:id", optionalAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const id = Number(req.params.id);
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ error: "Invalid item id" });
+    }
+
+    const item = await prisma.items.findUnique({
+      where: {
+        iid: id,
+      },
+      include: {
+        images: {
+          orderBy: { uploaded_at: "asc" },
+        },
+        item_tags: {
+          include: {
+            tags: true,
+          },
+        },
+        users: {
+          select: {
+            uid: true,
+            username: true,
+          },
+        },
+      },
+    });
+
+    if (!item) {
+      return res.status(404).json({ error: "Item not found" });
+    }
+
+    const permissions = {
+      canEdit: req.user?.userId === item.uid,
+      canDelete: req.user?.userId === item.uid,
+    };
+
+    res.json({
+      ...item,
+      tags: item.item_tags.map((it) => it.tags),
+      permissions
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+
 export default router;
+
 
