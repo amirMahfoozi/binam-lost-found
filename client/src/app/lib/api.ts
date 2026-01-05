@@ -1,6 +1,7 @@
 import { ItemPayload } from "../components/AddItem";
+import { Item } from "../components/ItemsList";
 
-const API_BASE = "http://localhost:4000";
+export const API_BASE = "http://localhost:4000";
 
 async function parseError(res: Response) {
   try {
@@ -83,4 +84,39 @@ export async function submitItem(payload: ItemPayload) {
     throw new Error(txt || "Add item failed");
   }
   return await res.json();
+}
+
+export async function loadCount(setCount: (n: number)=>null, setError: (err: string|null)=>null) {
+  try {
+    const res = await fetch(`${API_BASE}/items/count`);
+    if (!res.ok) throw new Error(await res.text() || "Failed to load count");
+    const data = await res.json();
+    // assume server returns { count: number } or a number directly; handle both
+    const c = typeof data === "number" ? data : data.count ?? null;
+    setCount(c);
+  } catch (err: any) {
+    setError(err.message || "Error loading item count");
+  }
+}
+
+export async function loadPage(p: number,
+                                PAGE_SIZE: number,
+                                setLoading: (isLoading: boolean)=>null,
+                                setError: (err: string|null)=>null,
+                                setItems: (items: Item[])=>null) {
+  setLoading(true);
+  setError(null);
+  try {
+    const res = await fetch(`${API_BASE}/items?page=${p}&limit=${PAGE_SIZE}`);
+    if (!res.ok) throw new Error(await res.text() || "Failed to load items");
+    const data = await res.json();
+    // expect data: { items: Item[] } or Item[]
+    const list: Item[] = Array.isArray(data) ? data : data.items ?? [];
+    setItems(list);
+  } catch (err: any) {
+    setError(err.message || "Error loading items");
+    setItems([]);
+  } finally {
+    setLoading(false);
+  }
 }

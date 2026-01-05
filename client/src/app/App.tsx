@@ -5,10 +5,11 @@ import { EmailVerification } from "./components/EmailVerification";
 import { Header } from "./components/Header";
 import { PackageCheck, FileText, Bell } from "lucide-react";
 import AddItem from "./components/AddItem";
+import ItemsList from "./components/ItemsList";
 
 // type ViewType = "login" | "register" | "verify-email" | "dashboard";
-type ViewType = "login" | "register" | "verify-email" | "dashboard" | "add-item";
-// type ViewType = "login" | "register" | "verify-email" | "dashboard" | "add-item" | "items";
+// type ViewType = "login" | "register" | "verify-email" | "dashboard" | "add-item";
+type ViewType = "login" | "register" | "verify-email" | "dashboard" | "add-item" | "items";
 
 type AppUser = {
   uid: number | string;
@@ -125,6 +126,18 @@ export default function App() {
                 )}
               </div>
 
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div className="flex items-start gap-3">
+                    <PackageCheck className="size-5 text-green-600 mt-0.5" />
+                    <div onClick={() => setCurrentView("items")}>
+                      <h3 className="text-sm mb-1">Lost/Found Items</h3>
+                      <p className="text-xs text-gray-600">
+                        See all of the lost and found items
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
               <div className="space-y-4 mb-8">
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <div className="flex items-start gap-3">
@@ -133,18 +146,6 @@ export default function App() {
                       <h3 className="text-sm mb-1">Report Lost Items</h3>
                       <p className="text-xs text-gray-600">
                         Let others know what you've lost so they can help you find it
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <PackageCheck className="size-5 text-green-600 mt-0.5" />
-                    <div>
-                      <h3 className="text-sm mb-1">Found Something?</h3>
-                      <p className="text-xs text-gray-600">
-                        Post found items to help fellow students recover their belongings
                       </p>
                     </div>
                   </div>
@@ -175,6 +176,10 @@ export default function App() {
 
       {currentView === "add-item" && (
             <AddItem changeView={setCurrentView}/>
+            )}
+      
+      {currentView === "items" && (
+            <ItemsList changeView={setCurrentView}/>
             )}
 
       {/* token is currently unused here, but kept for future API calls */}

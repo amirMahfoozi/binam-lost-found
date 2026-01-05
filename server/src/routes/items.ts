@@ -152,10 +152,9 @@ router.get("/", async (req, res, next) => {
           },
         },
 
-        users: {
+        item_tags: {
           select: {
-            uid: true,
-            username: true,
+            tid: true,
           },
         },
       },
@@ -164,13 +163,13 @@ router.get("/", async (req, res, next) => {
 
     res.status(200).json({
       items: items.map((item) => ({
-        iid: item.iid,
+        id: item.iid,
         title: item.title,
         description: item.description,
         type: item.type,
-        add_date: item.add_date,
-        image: item.images[0]?.image_url ?? null,
-        user: item.users,
+        createdAt: item.add_date,
+        imageUrls: item.images[0]?.image_url ?? null,
+        tagIds: item.item_tags.map(s => s.tid),
       })),
       pagination: {
         page: pageNum,

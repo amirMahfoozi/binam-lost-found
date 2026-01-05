@@ -13,7 +13,7 @@ export type ItemPayload = {
   imageUrls: string[];
 };
 
-const TAG_OPTIONS = ["wallet", "phone", "keys", "bag", "clothes"];
+export const TAG_OPTIONS = ["wallet", "phone", "keys", "bag", "clothes"];
 const TYPE_OPTIONS: Array<ItemPayload["type"]> = ["LOST", "FOUND"];
 
 export default function AddItem({changeView}: {changeView: (string) => void}) {
@@ -142,6 +142,9 @@ export default function AddItem({changeView}: {changeView: (string) => void}) {
         <div className="actions">
           <button className="submit-btn" type="submit" disabled={loading}>
             {loading ? "Submitting..." : "Submit"}
+          </button>
+          <button className="cancel-btn" type="Cancel" disabled={loading} onClick={() => changeView("dashboard")}>
+            {loading ? "Submitting..." : "Cancel"}
           </button>
         </div>
 
