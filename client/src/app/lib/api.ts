@@ -1,3 +1,5 @@
+import { ItemPayload } from "../components/AddItem";
+
 const API_BASE = "http://localhost:4000";
 
 async function parseError(res: Response) {
@@ -44,4 +46,41 @@ export async function login(email: string, password: string) {
     token: string;
     user: { uid: string; email: string; username: string };
   }>;
+}
+
+export async function uploadImage(file: File): Promise<string> {
+  const token = localStorage.getItem("token");
+  const fd = new FormData();
+  fd.append("image", file);
+  const res = await fetch(`${API_BASE}/upload/addImage`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: fd
+   });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(txt || "Image upload failed");
+  }
+  const data = await res.json();
+  return data.url;
+}
+
+export async function submitItem(payload: ItemPayload) {
+  // const token = localStorage.getItem("token") || "";
+  const token = localStorage.getItem("token");
+  const res = await fetch(`${API_BASE}/items/addItem`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(txt || "Add item failed");
+  }
+  return await res.json();
 }

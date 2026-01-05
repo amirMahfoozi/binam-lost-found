@@ -4,8 +4,11 @@ import { RegisterForm } from "./components/RegisterForm";
 import { EmailVerification } from "./components/EmailVerification";
 import { Header } from "./components/Header";
 import { PackageCheck, FileText, Bell } from "lucide-react";
+import AddItem from "./components/AddItem";
 
-type ViewType = "login" | "register" | "verify-email" | "dashboard";
+// type ViewType = "login" | "register" | "verify-email" | "dashboard";
+type ViewType = "login" | "register" | "verify-email" | "dashboard" | "add-item";
+// type ViewType = "login" | "register" | "verify-email" | "dashboard" | "add-item" | "items";
 
 type AppUser = {
   uid: number | string;
@@ -126,7 +129,7 @@ export default function App() {
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                   <div className="flex items-start gap-3">
                     <FileText className="size-5 text-blue-600 mt-0.5" />
-                    <div>
+                    <div onClick={() => setCurrentView("add-item")}>
                       <h3 className="text-sm mb-1">Report Lost Items</h3>
                       <p className="text-xs text-gray-600">
                         Let others know what you've lost so they can help you find it
@@ -169,6 +172,10 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {currentView === "add-item" && (
+            <AddItem changeView={setCurrentView}/>
+            )}
 
       {/* token is currently unused here, but kept for future API calls */}
       {/* {token && <div className="hidden">{token}</div>} */}

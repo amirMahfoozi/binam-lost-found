@@ -9,11 +9,17 @@ import itemsRouter from "./routes/items";
 import uploadRouter from "./routes/upload";
 import { errorHandler } from "./middleware/errorHandler";
 
+// import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 export function createApp() {
   const app = express();
 
   app.use(cors());
   app.use(express.json());
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
   // Serve uploaded files statically
   app.use(

@@ -2,6 +2,7 @@
 import { Router } from "express";
 import { prisma } from "../db";
 import { requireAuth, AuthRequest, optionalAuth } from "../middleware/auth";
+import { useReducer } from "react";
 
 const router = Router();
 
@@ -16,6 +17,7 @@ router.post("/addItem", requireAuth, async (req: AuthRequest, res, next) => {
       latitude,
       longitude,
       tagIds,
+      // tags,
       imageUrls,
     } = req.body as {
       title?: string;
@@ -24,19 +26,21 @@ router.post("/addItem", requireAuth, async (req: AuthRequest, res, next) => {
       latitude?: number;
       longitude?: number;
       tagIds?: number[];
+      // tags?: string[];
       imageUrls?: string[];
     };
 
     if (
       !title ||
-      !description ||
+      // !description ||
       !type ||
       typeof latitude !== "number" ||
       typeof longitude !== "number"
     ) {
       return res.status(400).json({
         error:
-          "title, description, status, latitude and longitude are required",
+          // "title, description, status, latitude and longitude are required",
+          "title, status, latitude and longitude are required",
       });
     }
 
@@ -47,15 +51,16 @@ router.post("/addItem", requireAuth, async (req: AuthRequest, res, next) => {
     const userId = req.user!.userId;
 
     const tagIdsArr = Array.isArray(tagIds) ? tagIds : [];
+    // const tagsArr = Array.isArray(tags) ? tags : [];
 
     const imagesArr = Array.isArray(imageUrls) ? imageUrls : [];
 
     const item = await prisma.items.create({
       data: {
-        uid: userId,
+        uid: parseInt(userId),
         type: type.toLowerCase(),
         title: title,
-        description: description,
+        description: (description || ""),
         latitude: latitude,
         longitude: longitude,
 
@@ -67,8 +72,13 @@ router.post("/addItem", requireAuth, async (req: AuthRequest, res, next) => {
 
         item_tags: {
           create: tagIdsArr.map((tagId) => ({
+          // create: tagsArr.map((tag) => ({
             tags: {
-              connect: { tid: tagId },
+              // connect: { tid: tagId },
+              connectOrCreate: {
+                where: { tid: tagId },
+                create: { tagname: `tag-${tagId}` },
+              },
             },
           })),
         },
