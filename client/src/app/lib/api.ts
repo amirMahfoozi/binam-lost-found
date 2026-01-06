@@ -1,5 +1,6 @@
-import { ItemPayload } from "../components/AddItem";
-import { Item } from "../components/ItemsList";
+import { ItemPayload } from "../pages/AddItem";
+import { Item } from "../pages/ItemsList";
+import { ItemResponse } from "../pages/ItemShow";
 
 export const API_BASE = "http://localhost:4000";
 
@@ -120,3 +121,71 @@ export async function loadPage(p: number,
     setLoading(false);
   }
 }
+
+export async function showItem(id: number, 
+                                setItem: (item: ItemResponse|null)=>null, 
+                                setError: (err: string|null)=>null, 
+                                setLoading: (isLoading: boolean)=>null) {
+
+  const token = localStorage.getItem("token");
+
+  let mounted = true;
+  setLoading(true);
+  setError(null);
+
+  fetch(`${API_BASE}/items/${id}`, {headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,}})
+    .then(async (res) => {
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || `HTTP ${res.status}`);
+      }
+      return res.json();
+    })
+    .then((data: ItemResponse) => {
+      if (!mounted) return;
+      setItem(data);
+    })
+    .catch((err: Error) => {
+      if (!mounted) return;
+      setError(err.message || "Failed to load item");
+    })
+    .finally(() => {
+      if (!mounted) return;
+      setLoading(false);
+    });
+
+  return () => {
+    mounted = false;
+  };
+}
+
+export async function deleteItem(id: number, 
+                                    setItem: (item: ItemResponse|null)=>null, 
+                                    setError: (err: string|null)=>null, 
+                                    setDeleting: (isDeleting: boolean)=>null,
+                                    onDeleted?: (id: number) => void) {
+  const token = localStorage.getItem("token");
+
+  if (!confirm("Delete this item? This action cannot be undone.")) return;
+  setDeleting(true);
+  setError(null);
+
+  try {
+    const res = await fetch(`${API_BASE}/items/${id}`, {method: "DELETE",
+                                      headers: {"Content-Type": "application/json",
+                                        Authorization: `Bearer ${token}`}});
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body?.error || `HTTP ${res.status}`);
+    }
+
+    if (onDeleted) onDeleted(id);
+    setItem(null);
+  } catch (err: any) {
+    setError(err?.message || "Failed to delete item");
+  } finally {
+    setDeleting(false);
+  }
+};

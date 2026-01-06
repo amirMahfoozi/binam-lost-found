@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import "../../styles/AddItem.css";
 
 import { uploadImage, submitItem } from "../lib/api";
+import { Link } from "react-router-dom";
 
 export type ItemPayload = {
   title: string;
@@ -16,7 +17,8 @@ export type ItemPayload = {
 export const TAG_OPTIONS = ["wallet", "phone", "keys", "bag", "clothes"];
 const TYPE_OPTIONS: Array<ItemPayload["type"]> = ["LOST", "FOUND"];
 
-export default function AddItem({changeView}: {changeView: (string) => void}) {
+// export default function AddItem({changeView}: {changeView: (string) => void}) {
+export default function AddItem() {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [type, setType] = useState<ItemPayload["type"]>("LOST");
@@ -68,12 +70,14 @@ export default function AddItem({changeView}: {changeView: (string) => void}) {
         tagIds: selectedTags.map(s => TAG_OPTIONS.indexOf(s)),
         imageUrls: imageUrl ? [imageUrl] : [], // server-side will use default image if empty
       };
+      console.log(payload);
       await submitItem(payload);
       setMessage("Item added successfully.");
       setTitle(""); setDescription(""); setType("LOST"); setLatitude(""); setLongitude("");
       setSelectedTags([]); setImageFile(null);
       const el = document.getElementById("image-input") as HTMLInputElement | null ? "" : null;
-      changeView("dashboard");
+      // changeView("dashboard");
+      window.location.href = "/dashboard";
     } catch (err: any) {
       setMessage(err.message || "An error occurred.");
     } finally {
@@ -143,9 +147,14 @@ export default function AddItem({changeView}: {changeView: (string) => void}) {
           <button className="submit-btn" type="submit" disabled={loading}>
             {loading ? "Submitting..." : "Submit"}
           </button>
-          <button className="cancel-btn" type="Cancel" disabled={loading} onClick={() => changeView("dashboard")}>
+          {/* <button className="cancel-btn" type="Cancel" disabled={loading} onClick={() => changeView("dashboard")}>
             {loading ? "Submitting..." : "Cancel"}
-          </button>
+          </button> */}
+          <Link to="/dashboard">
+            <button className="cancel-btn" type="Cancel" disabled={loading}>
+              {loading ? "Submitting..." : "Cancel"}
+            </button>
+          </Link>
         </div>
 
         {message && <div className="message">{message}</div>}

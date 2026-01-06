@@ -1,85 +1,76 @@
 import React, { useEffect, useState } from "react";
+import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from "react-router-dom";
 import { LoginForm } from "./components/LoginForm";
 import { RegisterForm } from "./components/RegisterForm";
 import { EmailVerification } from "./components/EmailVerification";
 import { Header } from "./components/Header";
-import { PackageCheck, FileText, Bell } from "lucide-react";
-import AddItem from "./components/AddItem";
-import ItemsList from "./components/ItemsList";
+import AddItem from "./pages/AddItem";
+import ItemsList from "./pages/ItemsList";
+import Dashboard from "./pages/Dashboard";
+import ItemShow from "./pages/ItemShow";
 
-// type ViewType = "login" | "register" | "verify-email" | "dashboard";
-// type ViewType = "login" | "register" | "verify-email" | "dashboard" | "add-item";
-type ViewType = "login" | "register" | "verify-email" | "dashboard" | "add-item" | "items";
-
-type AppUser = {
+export type AppUser = {
   uid: number | string;
   email: string;
   username: string;
 };
 
-export default function App() {
-  const [currentView, setCurrentView] = useState<ViewType>("login");
+export default function AppWrapper() {
+  return (
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
+  );
+}
 
-  // For OTP flow
+function userExists(){
+  return localStorage.getItem("user") !== null;
+}
+
+function App() {
   const [userEmail, setUserEmail] = useState("");
   const [registerUsername, setRegisterUsername] = useState("");
   const [registerPassword, setRegisterPassword] = useState("");
 
-  // Auth session
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<AppUser | null>(null);
 
-  // Restore session on refresh
   useEffect(() => {
     const t = localStorage.getItem("token");
     const u = localStorage.getItem("user");
-
     if (t && u) {
       try {
         const parsed = JSON.parse(u) as AppUser;
         setToken(t);
         setUser(parsed);
-        setCurrentView("dashboard");
       } catch {
-        // If storage is corrupted, clear it
         localStorage.removeItem("token");
         localStorage.removeItem("user");
       }
     }
   }, []);
 
-  // Register step 1 success -> go to OTP screen
-  const handleRegisterSuccess = (email: string, username: string, password: string) => {
-    setUserEmail(email);
-    setRegisterUsername(username);
-    setRegisterPassword(password);
-    setCurrentView("verify-email");
-  };
-
   const persistSession = (t: string, u: AppUser) => {
     setToken(t);
     setUser(u);
     localStorage.setItem("token", t);
     localStorage.setItem("user", JSON.stringify(u));
-    setCurrentView("dashboard");
   };
 
-  // Login success
-  const handleLoginSuccess = (t: string, u: AppUser) => {
-    persistSession(t, u);
+  const handleRegisterSuccess = (email: string, username: string, password: string) => {
+    setUserEmail(email);
+    setRegisterUsername(username);
+    setRegisterPassword(password);
   };
 
-  // OTP verification success
-  const handleVerificationComplete = (t: string, u: AppUser) => {
-    persistSession(t, u);
-  };
+  const handleLoginSuccess = (t: string, u: AppUser) => persistSession(t, u);
+  const handleVerificationComplete = (t: string, u: AppUser) => persistSession(t, u);
 
   const signOut = () => {
     setToken(null);
     setUser(null);
     localStorage.removeItem("token");
     localStorage.removeItem("user");
-    setCurrentView("login");
   };
 
   return (
@@ -88,102 +79,117 @@ export default function App() {
 
       <div className="flex items-center justify-center p-4">
         <div className="w-full max-w-md">
-          {currentView === "login" && (
-            <LoginForm
-              onLoginSuccess={handleLoginSuccess}
-              onSwitchToRegister={() => setCurrentView("register")}
+          <Routes>
+            <Route
+              path="/"
+              // element={user ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />}
+              element={userExists() ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />}
             />
-          )}
 
-          {currentView === "register" && (
-            <RegisterForm
-              onRegisterSuccess={handleRegisterSuccess}
-              onSwitchToLogin={() => setCurrentView("login")}
+            <Route
+              path="/login"
+              element={
+                !userExists() ?
+                <LoginForm
+                  onLoginSuccess={handleLoginSuccess}
+                  onSwitchToRegister={() => (window.location.href = "/register")}
+                /> : 
+                <Navigate to="/dashboard" replace />
+              }
             />
-          )}
 
-          {currentView === "verify-email" && (
-            <EmailVerification
-              email={userEmail}
-              username={registerUsername}
-              password={registerPassword}
-              onVerificationComplete={handleVerificationComplete}
-              onBackToRegister={() => setCurrentView("register")}
+            <Route
+              path="/register"
+              element={
+                <RegisterForm
+                  onRegisterSuccess={(email, username, password) => {
+                    handleRegisterSuccess(email, username, password);
+                    // navigate to verify-email after storing register fields
+                    window.location.href = "/verify-email";
+                  }}
+                  onSwitchToLogin={() => (window.location.href = "/login")}
+                />
+              }
             />
-          )}
 
-          {currentView === "dashboard" && (
-            <div className="bg-white rounded-lg shadow-lg p-8">
-              <div className="text-center mb-8">
-                <div className="mb-4 w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto">
-                  <PackageCheck className="size-8 text-green-600" />
-                </div>
-                <h2 className="mb-2">Welcome to Campus Lost &amp; Found!</h2>
-                {user && (
-                  <p className="text-sm text-gray-600">
-                    Signed in as {user.email} ({user.username})
-                  </p>
-                )}
-              </div>
+            <Route
+              path="/verify-email"
+              element={
+                <EmailVerification
+                  email={userEmail}
+                  username={registerUsername}
+                  password={registerPassword}
+                  onVerificationComplete={(t, u) => {
+                    handleVerificationComplete(t, u);
+                    window.location.href = "/dashboard";
+                  }}
+                  onBackToRegister={() => (window.location.href = "/register")}
+                />
+              }
+            />
 
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <PackageCheck className="size-5 text-green-600 mt-0.5" />
-                    <div onClick={() => setCurrentView("items")}>
-                      <h3 className="text-sm mb-1">Lost/Found Items</h3>
-                      <p className="text-xs text-gray-600">
-                        See all of the lost and found items
-                      </p>
-                    </div>
-                  </div>
-                </div>
+            <Route
+              path="/dashboard"
+              element={
+                // user ? (
+                  userExists() ? (
+                  <Dashboard
+                    user={user}
+                    onNavigate={(path) => (window.location.href = path)}
+                    onSignOut={signOut}
+                  />
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
 
-              <div className="space-y-4 mb-8">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <FileText className="size-5 text-blue-600 mt-0.5" />
-                    <div onClick={() => setCurrentView("add-item")}>
-                      <h3 className="text-sm mb-1">Report Lost Items</h3>
-                      <p className="text-xs text-gray-600">
-                        Let others know what you've lost so they can help you find it
-                      </p>
-                    </div>
-                  </div>
-                </div>
+            <Route
+              path="/items"
+              // element={user ? <ItemsList changeView={() => { /* unused */ }} /> : <Navigate to="/login" replace />}
+              element={userExists() ? <ItemsList/> : <Navigate to="/login" replace />}
+            />
 
-                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                  <div className="flex items-start gap-3">
-                    <Bell className="size-5 text-purple-600 mt-0.5" />
-                    <div>
-                      <h3 className="text-sm mb-1">Get Notifications</h3>
-                      <p className="text-xs text-gray-600">
-                        Receive alerts when items matching your description are found
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+            <Route
+              path="/add-item"
+              // element={user ? <AddItem changeView={() => { /* unused */ }} /> : <Navigate to="/login" replace />}
+              element={userExists() ? <AddItem/> : <Navigate to="/login" replace />}
+            />
 
-              <div className="text-center">
-                <button onClick={signOut} className="text-blue-600 hover:underline text-sm">
-                  Sign Out
-                </button>
-              </div>
-            </div>
-          )}
+            <Route
+              path="/items/:id"
+              element={
+                userExists() ? (
+                  <ItemShowWrapper/>
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
+
+
+            {/* Fallback */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </div>
       </div>
-
-      {currentView === "add-item" && (
-            <AddItem changeView={setCurrentView}/>
-            )}
-      
-      {currentView === "items" && (
-            <ItemsList changeView={setCurrentView}/>
-            )}
-
-      {/* token is currently unused here, but kept for future API calls */}
-      {/* {token && <div className="hidden">{token}</div>} */}
     </div>
+  );
+}
+
+function ItemShowWrapper() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const itemId = Number(id);
+  if (Number.isNaN(itemId)) {
+    return <div className="p-4">Invalid item id</div>;
+  }
+
+  return (
+    <ItemShow
+      id={itemId}
+      onEdit={(iid) => navigate(`/items/${iid}/edit`)}
+      onDelete={(iid) => navigate("/items")}
+    />
   );
 }

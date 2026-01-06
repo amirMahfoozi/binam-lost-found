@@ -2,7 +2,8 @@ import React, { useEffect, useState } from "react";
 import "../../styles/ItemsList.css";
 import { loadCount, loadPage} from "../lib/api";
 import { TAG_OPTIONS } from "./AddItem";
-import { Button } from "./ui/button";
+import { Button } from "../components/ui/button";
+import { Link } from "react-router-dom";
 
 export type Item = {
   id: number;
@@ -16,7 +17,8 @@ export type Item = {
 
 const PAGE_SIZE = 6;
 
-export default function ItemsList({changeView}: {changeView: (string) => void}) {
+// export default function ItemsList({changeView}: {changeView: (string) => void}) {
+export default function ItemsList() {
   const [count, setCount] = useState<number>(0);
   const [page, setPage] = useState<number>(1);
   const [items, setItems] = useState<Item[]>([]);
@@ -56,6 +58,7 @@ export default function ItemsList({changeView}: {changeView: (string) => void}) 
       ) : (
         <div className="items-grid">
           {items.map(item => (
+            <Link to={"/items/" + item.id} key={item.id}>
             <div key={item.id} className={`item-card ${item.type === "FOUND" ? "found" : "lost"}`}>
               <div className="item-image">
                 {item.imageUrls && item.imageUrls.length > 0 ? (
@@ -78,6 +81,7 @@ export default function ItemsList({changeView}: {changeView: (string) => void}) 
                 </div>
               </div>
             </div>
+            </Link>
           ))}
         </div>
       )}
@@ -89,7 +93,9 @@ export default function ItemsList({changeView}: {changeView: (string) => void}) 
         <button onClick={() => goto(page + 1)} disabled={count !== null && page >= totalPages}>Next</button>
         <button onClick={() => goto(totalPages)} disabled={count !== null && page >= totalPages}>Last</button>
       </div>
-      <Button onClick={()=>changeView("dashboard")}>Back</Button>
+      {/* <Button onClick={()=>changeView("dashboard")}>Back</Button> */}
+      {/* <Button onClick={()=>window.location.href = "/dashboard"}>Back</Button> */}
+      <Link to="/dashboard"><Button >Back</Button></Link>
     </div>
   );
 }
