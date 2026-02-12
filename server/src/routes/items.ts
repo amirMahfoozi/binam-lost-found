@@ -2,7 +2,6 @@
 import { Router } from "express";
 import { prisma } from "../db";
 import { requireAuth, AuthRequest, optionalAuth } from "../middleware/auth";
-import { useReducer } from "react";
 
 const router = Router();
 
@@ -17,7 +16,6 @@ router.post("/addItem", requireAuth, async (req: AuthRequest, res, next) => {
       latitude,
       longitude,
       tagIds,
-      // tags,
       imageUrls,
     } = req.body as {
       title?: string;
@@ -26,82 +24,108 @@ router.post("/addItem", requireAuth, async (req: AuthRequest, res, next) => {
       latitude?: number;
       longitude?: number;
       tagIds?: number[];
-      // tags?: string[];
       imageUrls?: string[];
     };
 
-    if (
-      !title ||
-      // !description ||
-      !type ||
-      typeof latitude !== "number" ||
-      typeof longitude !== "number"
-    ) {
-      return res.status(400).json({
-        error:
-          // "title, description, status, latitude and longitude are required",
-          "title, status, latitude and longitude are required",
-      });
+    // basic validation
+    if (!title || typeof title !== "string") {
+      return res.status(400).json({ error: "title is required" });
+    }
+    if (!description || typeof description !== "string") {
+      return res.status(400).json({ error: "description is required" });
+    }
+    if (!type || typeof type !== "string") {
+      return res.status(400).json({ error: "type is required" });
     }
 
-    if (type !== "LOST" && type !== "FOUND") {
-      return res.status(400).json({ error: "status must be Lost or Found" });
+    const normalizedType = type.toLowerCase();
+    if (normalizedType !== "lost" && normalizedType !== "found") {
+      return res.status(400).json({ error: "type must be LOST or FOUND" });
     }
 
-    const userId = req.user!.userId;
+    if (typeof latitude !== "number" || typeof longitude !== "number") {
+      return res.status(400).json({ error: "latitude and longitude are required" });
+    }
+    if (latitude < -90 || latitude > 90) {
+      return res.status(400).json({ error: "Invalid latitude" });
+    }
+    if (longitude < -180 || longitude > 180) {
+      return res.status(400).json({ error: "Invalid longitude" });
+    }
+
+    const userId = Number(req.user!.userId);
+    if (!Number.isFinite(userId)) {
+      return res.status(401).json({ error: "Invalid auth user" });
+    }
 
     const tagIdsArr = Array.isArray(tagIds) ? tagIds : [];
-    // const tagsArr = Array.isArray(tags) ? tags : [];
+    if (Array.isArray(tagIds) && tagIds.length === 0) {
+      return res.status(400).json({ error: "At least one tag should be selected" });
+    }
 
     const imagesArr = Array.isArray(imageUrls) ? imageUrls : [];
 
-    const item = await prisma.items.create({
-      data: {
-        uid: parseInt(userId),
-        type: type.toLowerCase(),
-        title: title,
-        description: (description || ""),
-        latitude: latitude,
-        longitude: longitude,
+    const created = await prisma.$transaction(async (tx) => {
+      // verify tags exist
+      const validTags = await tx.tags.findMany({
+        where: { tid: { in: tagIdsArr } },
+        select: { tid: true },
+      });
 
-        images: {
-          create: imagesArr.map((url) => ({
+      if (validTags.length !== tagIdsArr.length) {
+        throw new Error("One or more tags do not exist");
+      }
+
+      // create item
+      const item = await tx.items.create({
+        data: {
+          uid: userId,
+          type: normalizedType,
+          title,
+          description: description,
+          latitude,
+          longitude,
+        },
+      });
+
+      // create images
+      if (imagesArr.length > 0) {
+        await tx.images.createMany({
+          data: imagesArr.map((url) => ({
+            iid: item.iid,
             image_url: url,
           })),
-        },
+        });
+      }
 
-        item_tags: {
-          create: tagIdsArr.map((tagId) => ({
-          // create: tagsArr.map((tag) => ({
-            tags: {
-              // connect: { tid: tagId },
-              connectOrCreate: {
-                where: { tid: tagId },
-                create: { tagname: `tag-${tagId}` },
-              },
-            },
-          })),
+      // create item_tags
+      await tx.item_tags.createMany({
+        data: tagIdsArr.map((tid) => ({
+          iid: item.iid,
+          tid,
+        })),
+      });
+
+      // return full item with relations
+      return tx.items.findUnique({
+        where: { iid: item.iid },
+        include: {
+          images: { orderBy: { uploaded_at: "asc" } },
+          item_tags: { include: { tags: true } },
+          users: { select: { uid: true, username: true } },
         },
-      },
-      include: {
-        images: true,
-        item_tags: {
-          include: {
-            tags: true,
-          },
-        },
-      },
+      });
     });
 
-
     res.status(201).json({
-      ...item,
-      tags: item.item_tags.map((it) => it.tags),
+      ...created,
+      tags: created!.item_tags.map((it) => it.tags),
     });
   } catch (err) {
     next(err);
   }
 });
+
 
 // GET /items/count
 // no queries yet
@@ -118,25 +142,74 @@ router.get("/count", async (req, res, next) => {
 });
 
 // GET /items
-// query: page, limit
+// query: page, limit, minLat, maxLat, minLong, maxLong
+// example query: {{baseURL}}/items?page=1&limit=50&minLat=30&maxLat=60&minLong=60&maxLong=120
 router.get("/", async (req, res, next) => {
   try {
     const {
       page,
       limit,
+      minLat,
+      maxLat,
+      minLong,
+      maxLong,
     } = req.query as {
       page?: string;
       limit?: string;
+      minLat?: string;
+      maxLat?: string;
+      minLong?: string;
+      maxLong?: string;
     };
 
-    const pageNum = Math.max(parseInt(page || "1", 10) || 1, 1);
-    const take = Math.min(parseInt(limit || "50", 10) || 50, 100);
-    const skip = (pageNum - 1) * take;
+    // page and item calculation
+    const usePagination = page !== undefined || limit !== undefined;
+
+    const pageNum = usePagination
+      ? Math.max(parseInt(page || "1", 10) || 1, 1)
+      : 1;
+
+    const take = usePagination
+      ? Math.min(parseInt(limit || "50", 10) || 50, 100)
+      : undefined;
+
+    const skip = usePagination && take !== undefined
+      ? (pageNum - 1) * take
+      : undefined;
+
+    const where: any = {};
+
+    // Latitude conditions
+    if (minLat !== undefined || maxLat !== undefined) {
+      where.latitude = {};
+
+      if (minLat !== undefined) {
+        where.latitude.gte = Number(minLat);
+      }
+
+      if (maxLat !== undefined) {
+        where.latitude.lte = Number(maxLat);
+      }
+    }
+
+    // Longitude conditions
+    if (minLong !== undefined || maxLong !== undefined) {
+      where.longitude = {};
+
+      if (minLong !== undefined) {
+        where.longitude.gte = Number(minLong);
+      }
+
+      if (maxLong !== undefined) {
+        where.longitude.lte = Number(maxLong);
+      }
+    }
 
     const items = await prisma.items.findMany({
-      skip: skip,
-      take: take,
+      where, 
       orderBy: { add_date: "desc" },
+      ...(skip !== undefined && { skip }),
+      ...(take !== undefined && { take }),
       select: {
         iid: true,
         title: true,
@@ -171,10 +244,9 @@ router.get("/", async (req, res, next) => {
         imageUrls: item.images[0]?.image_url ?? null,
         tagIds: item.item_tags.map(s => s.tid),
       })),
-      pagination: {
-        page: pageNum,
-        limit: take,
-      },
+      pagination: usePagination
+        ? { page: pageNum, limit: take }
+        : null,
     });
 
   } catch (err) {
@@ -251,7 +323,7 @@ router.patch("/:id", requireAuth, async (req: AuthRequest, res, next) => {
       return res.status(404).json({ error: "Item not found" });
     }
 
-    if (existing.uid !== userId) {
+    if (existing.uid !== Number(userId)) {
       return res.status(403).json({ error: "Not allowed to edit this item" });
     }
 
