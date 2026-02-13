@@ -7,6 +7,7 @@ import healthRouter from "./routes/health";
 import authRouter from "./routes/auth";
 import itemsRouter from "./routes/items";
 import uploadRouter from "./routes/upload";
+import tagsRouter from "./routes/tags";
 import { errorHandler } from "./middleware/errorHandler";
 
 // import path from "node:path";
@@ -32,6 +33,7 @@ const __dirname = path.dirname(__filename);
   app.use("/auth", authRouter);
   app.use("/items", itemsRouter);
   app.use("/upload", uploadRouter);
+  app.use("/tags", tagsRouter);
 
   // 404 handler
   app.use((req, res) => {
@@ -43,4 +45,5 @@ const __dirname = path.dirname(__filename);
 
   return app;
 }
+
 
