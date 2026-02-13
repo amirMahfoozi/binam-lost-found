@@ -100,6 +100,29 @@ export async function loadCount(setCount: (n: number)=>null, setError: (err: str
   }
 }
 
+export type MapTag = { tid: number; tagname: string; color: string | null };
+
+export type MapItem = {
+  id: number;
+  title: string;
+  description?: string;
+  type: string;
+  latitude: number | string;
+  longitude: number | string;
+  createdAt?: string;
+  imageUrl?: string | null;
+  tags?: MapTag[]; // ✅
+};
+
+
+export async function loadMapItems(): Promise<MapItem[]> {
+  const res = await fetch(`${API_BASE}/items/map-items`);
+  if (!res.ok) throw new Error(await parseError(res));
+  const data = await res.json();
+  return (data?.items ?? []) as MapItem[];
+}
+
+
 export async function loadPage(p: number,
                                 PAGE_SIZE: number,
                                 setLoading: (isLoading: boolean)=>null,
@@ -121,21 +144,28 @@ export async function loadPage(p: number,
     setLoading(false);
   }
 }
-
-export async function showItem(id: number, 
-                                setItem: (item: ItemResponse|null)=>null, 
-                                setError: (err: string|null)=>null, 
-                                setLoading: (isLoading: boolean)=>null) {
-
+export async function showItem(
+  id: number,
+  setItem: (item: ItemResponse | null) => null,
+  setError: (err: string | null) => null,
+  setLoading: (isLoading: boolean) => null
+) {
   const token = localStorage.getItem("token");
 
   let mounted = true;
   setLoading(true);
   setError(null);
 
-  fetch(`${API_BASE}/items/${id}`, {headers: {
+  const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    Authorization: `Bearer ${token}`,}})
+  };
+
+  // ✅ only attach Authorization if token exists
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  fetch(`${API_BASE}/items/${id}`, { headers })
     .then(async (res) => {
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -189,3 +219,5 @@ export async function deleteItem(id: number,
     setDeleting(false);
   }
 };
+
+

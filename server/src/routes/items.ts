@@ -126,6 +126,54 @@ router.post("/addItem", requireAuth, async (req: AuthRequest, res, next) => {
   }
 });
 
+// new part for show in map:
+
+// GET /items/map
+// Returns lightweight items for showing on map pins
+// GET /items/map-items
+router.get("/map-items", async (req, res, next) => {
+  try {
+    const items = await prisma.items.findMany({
+      orderBy: { add_date: "desc" },
+      select: {
+        iid: true,
+        title: true,
+        description: true,   // ✅ include description too (nice for popup)
+        type: true,
+        latitude: true,
+        longitude: true,
+        add_date: true,
+        images: {
+          orderBy: { uploaded_at: "asc" },
+          take: 1,
+          select: { image_url: true },
+        },
+        item_tags: {
+          select: {
+            tags: { select: { tid: true, tagname: true, color: true } }, // adjust if your column is tagname
+          },
+        },
+      },
+    });
+
+    res.status(200).json({
+      items: items.map((it) => ({
+        id: it.iid,
+        title: it.title,
+        description: it.description,
+        type: it.type,
+        latitude: it.latitude,
+        longitude: it.longitude,
+        createdAt: it.add_date,
+        imageUrl: it.images[0]?.image_url ?? null,
+        tags: it.item_tags.map((x) => x.tags), // [{tid, tagname, color}]
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 
 // GET /items/count
 // no queries yet
@@ -241,7 +289,7 @@ router.get("/", async (req, res, next) => {
         description: item.description,
         type: item.type,
         createdAt: item.add_date,
-        imageUrls: item.images[0]?.image_url ?? null,
+        imageUrls: item.images.map((img) => img.image_url),
         tagIds: item.item_tags.map(s => s.tid),
       })),
       pagination: usePagination

@@ -1,8 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import "../../styles/AddItem.css";
 
 import { uploadImage, submitItem } from "../lib/api";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 export type ItemPayload = {
   title: string;
@@ -17,8 +17,9 @@ export type ItemPayload = {
 export const TAG_OPTIONS = ["wallet", "phone", "keys", "bag", "clothes"];
 const TYPE_OPTIONS: Array<ItemPayload["type"]> = ["LOST", "FOUND"];
 
-// export default function AddItem({changeView}: {changeView: (string) => void}) {
 export default function AddItem() {
+  const location = useLocation();
+
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [type, setType] = useState<ItemPayload["type"]>("LOST");
@@ -29,9 +30,28 @@ export default function AddItem() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
+  // ✅ Prefill from map hold: /add-item?lat=...&lng=...&type=lost
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const lat = params.get("lat");
+    const lng = params.get("lng");
+    const t = params.get("type");
+
+    if (lat) setLatitude(lat);
+    if (lng) setLongitude(lng);
+
+    if (t) {
+      const tt = t.toLowerCase();
+      if (tt === "lost") setType("LOST");
+      if (tt === "found") setType("FOUND");
+      if (t === "LOST") setType("LOST");
+      if (t === "FOUND") setType("FOUND");
+    }
+  }, [location.search]);
+
   function toggleTag(tag: string) {
-    setSelectedTags(prev =>
-      prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
     );
   }
 
@@ -39,16 +59,17 @@ export default function AddItem() {
     e.preventDefault();
     setMessage(null);
 
-    // Required fields: title, type, latitude, longitude, at least one tag
     if (!title.trim()) { setMessage("Title is required."); return; }
     if (!type) { setMessage("Type is required."); return; }
-    if (!latitude.trim() || !longitude.trim()) {setMessage("Coordination is required."); return;}
+    if (!latitude.trim() || !longitude.trim()) { setMessage("Coordination is required."); return; }
+
     const latNum = Number(latitude);
     const lonNum = Number(longitude);
     if (Number.isNaN(latNum) || Number.isNaN(lonNum)) {
       setMessage("Latitude and longitude must be numbers.");
       return;
     }
+
     if (selectedTags.length === 0) {
       setMessage("Select at least one tag.");
       return;
@@ -56,27 +77,28 @@ export default function AddItem() {
 
     setLoading(true);
     try {
-      // If image provided, upload first; otherwise, proceed without uploading.
       let imageUrl: string | null = null;
-      if (imageFile) {
-        imageUrl = await uploadImage(imageFile);
-      }
+      if (imageFile) imageUrl = await uploadImage(imageFile);
+
       const payload: ItemPayload = {
         title: title.trim(),
         description: description.trim(),
         type,
         latitude: latNum,
         longitude: lonNum,
-        tagIds: selectedTags.map(s => TAG_OPTIONS.indexOf(s)),
-        imageUrls: imageUrl ? [imageUrl] : [], // server-side will use default image if empty
+        tagIds: selectedTags.map((s) => TAG_OPTIONS.indexOf(s) + 1), // ✅ 1-based IDs
+        imageUrls: imageUrl ? [imageUrl] : [],
       };
-      console.log(payload);
+
       await submitItem(payload);
+
       setMessage("Item added successfully.");
       setTitle(""); setDescription(""); setType("LOST"); setLatitude(""); setLongitude("");
       setSelectedTags([]); setImageFile(null);
-      const el = document.getElementById("image-input") as HTMLInputElement | null ? "" : null;
-      // changeView("dashboard");
+
+      const el = document.getElementById("image-input") as HTMLInputElement | null;
+      if (el) el.value = "";
+
       window.location.href = "/dashboard";
     } catch (err: any) {
       setMessage(err.message || "An error occurred.");

@@ -4,6 +4,17 @@ import { deleteItem, showItem } from "../lib/api";
 import { TAG_OPTIONS } from "./AddItem";
 import { Link } from "react-router-dom";
 
+
+const API_BASE = "http://localhost:4000";
+
+function toAbsoluteUrl(url?: string) {
+  if (!url) return "";
+  if (url.startsWith("http")) return url;
+  return `${API_BASE}${url.startsWith("/") ? "" : "/"}${url}`;
+}
+
+
+
 type Image = {
   imid: number;
   iid?: number;
@@ -51,6 +62,7 @@ export default function ItemShow({ id, onEdit, onDelete }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [showFullImage, setShowFullImage] = useState(false);
+  
 
   useEffect(()=>{showItem(id, setItem, setError, setLoading);}, []);
 
@@ -70,15 +82,15 @@ export default function ItemShow({ id, onEdit, onDelete }: Props) {
         <div className="imageCol">
           {item.images && item.images.length > 0 ? (
             <>
-              <img
-                src={item.images[0].image_url}
-                alt={item.title}
-                className="image"
-                onClick={() => setShowFullImage((s) => !s)}
-              />
+             <img
+  src={toAbsoluteUrl(item.images[0].image_url)}
+  alt={item.title}
+  className="image"
+  onClick={() => setShowFullImage((s) => !s)}
+/>
               {showFullImage && (
                 <div className="lightbox" onClick={() => setShowFullImage(false)}>
-                  <img src={item.images[0].image_url} alt={item.title} className="lightboxImage" />
+                  <img src={toAbsoluteUrl(item.images[0].image_url)} alt={item.title} className="lightboxImage" />
                 </div>
               )}
             </>

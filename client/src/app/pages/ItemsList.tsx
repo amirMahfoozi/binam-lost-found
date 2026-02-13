@@ -10,10 +10,19 @@ export type Item = {
   title: string;
   description: string;
   type: "LOST" | "FOUND";
-  tagIds: string[];
+  tagIds: number[];
   imageUrls: string[];
   createdAt?: string;
 };
+
+
+const API_BASE = "http://localhost:4000";
+
+function toAbsoluteUrl(url?: string | null) {
+  if (!url) return null;
+  if (url.startsWith("http")) return url;
+  return `${API_BASE}${url.startsWith("/") ? "" : "/"}${url}`;
+}
 
 const PAGE_SIZE = 6;
 
@@ -24,6 +33,7 @@ export default function ItemsList() {
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  
 
   const totalPages = count ? Math.max(1, Math.ceil(count / PAGE_SIZE)) : 1;
 
@@ -57,33 +67,44 @@ export default function ItemsList() {
         <div className="message">Loading items...</div>
       ) : (
         <div className="items-grid">
-          {items.map(item => (
+        {items.map((item) => {
+          const imgSrc = toAbsoluteUrl(item.imageUrls?.[0]);
+      
+          return (
             <Link to={"/items/" + item.id} key={item.id}>
-            <div key={item.id} className={`item-card ${item.type === "FOUND" ? "found" : "lost"}`}>
-              <div className="item-image">
-                {item.imageUrls && item.imageUrls.length > 0 ? (
-                  <img src={item.imageUrls[0]} alt={item.title} />
-                ) : (
-                  <div className="placeholder">No image</div>
-                )}
+              <div className={`item-card ${item.type === "FOUND" ? "found" : "lost"}`}>
+                <div className="item-image">
+                  {imgSrc ? (
+                    <img src={imgSrc} alt={item.title} />
+                  ) : (
+                    <div className="placeholder">No image</div>
+                  )}
+                </div>
+      
+                <div className="item-body">
+                  <div className="item-row">
+                    <h3 className="item-title">{item.title}</h3>
+                    <span className="item-type">{item.type}</span>
+                  </div>
+      
+                  <div className="item-desc">{item.description || "—"}</div>
+      
+                  <div className="item-meta">
+                    <span className="meta-tags">
+                      {item.tagIds.map((id) => TAG_OPTIONS[id]).join(", ")}
+                    </span>
+                  </div>
+      
+                  <div className="item-footer">
+                    <small>{item.createdAt ? new Date(item.createdAt).toLocaleString() : ""}</small>
+                  </div>
+                </div>
               </div>
-              <div className="item-body">
-                <div className="item-row">
-                  <h3 className="item-title">{item.title}</h3>
-                  <span className="item-type">{item.type}</span>
-                </div>
-                <div className="item-desc">{item.description || "—"}</div>
-                <div className="item-meta">
-                  <span className="meta-tags">{item.tagIds.map(s => TAG_OPTIONS[s]).join(", ")}</span>
-                </div>
-                <div className="item-footer">
-                  <small>{item.createdAt ? new Date(item.createdAt).toLocaleString() : ""}</small>
-                </div>
-              </div>
-            </div>
             </Link>
-          ))}
-        </div>
+          );
+        })}
+      </div>
+      
       )}
 
       <div className="pagination">

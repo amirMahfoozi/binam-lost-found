@@ -1,9 +1,19 @@
+// client/src/App.tsx
 import React, { useEffect, useState } from "react";
-import { BrowserRouter, Routes, Route, Navigate, useNavigate, useParams } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
+
 import { LoginForm } from "./components/LoginForm";
 import { RegisterForm } from "./components/RegisterForm";
 import { EmailVerification } from "./components/EmailVerification";
 import { Header } from "./components/Header";
+
 import AddItem from "./pages/AddItem";
 import ItemsList from "./pages/ItemsList";
 import Dashboard from "./pages/Dashboard";
@@ -23,11 +33,13 @@ export default function AppWrapper() {
   );
 }
 
-function userExists(){
+function userExists() {
   return localStorage.getItem("user") !== null;
 }
 
 function App() {
+  const navigate = useNavigate();
+
   const [userEmail, setUserEmail] = useState("");
   const [registerUsername, setRegisterUsername] = useState("");
   const [registerPassword, setRegisterPassword] = useState("");
@@ -71,115 +83,109 @@ function App() {
     setUser(null);
     localStorage.removeItem("token");
     localStorage.removeItem("user");
+    navigate("/login", { replace: true });
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
-      <Header />
+ // client/src/App.tsx
+return (
+  <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
+    <Header />
 
-      <div className="flex items-center justify-center p-4">
-        <div className="w-full max-w-md">
-          <Routes>
-            <Route
-              path="/"
-              // element={user ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />}
-              element={userExists() ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />}
-            />
+    <div className="p-4">
+      <Routes>
+        <Route
+          path="/"
+          element={userExists() ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />}
+        />
 
-            <Route
-              path="/login"
-              element={
-                !userExists() ?
-                <LoginForm
-                  onLoginSuccess={handleLoginSuccess}
-                  onSwitchToRegister={() => (window.location.href = "/register")}
-                /> : 
-                <Navigate to="/dashboard" replace />
-              }
-            />
+        {/* Auth pages centered */}
+        <Route
+          path="/login"
+          element={
+            !userExists() ? (
+              <div className="flex items-center justify-center">
+                <div className="w-full max-w-md">
+                  <LoginForm
+                    onLoginSuccess={handleLoginSuccess}
+                    onSwitchToRegister={() => navigate("/register")}
+                  />
+                </div>
+              </div>
+            ) : (
+              <Navigate to="/dashboard" replace />
+            )
+          }
+        />
 
-            <Route
-              path="/register"
-              element={
+        <Route
+          path="/register"
+          element={
+            <div className="flex items-center justify-center">
+              <div className="w-full max-w-md">
                 <RegisterForm
                   onRegisterSuccess={(email, username, password) => {
                     handleRegisterSuccess(email, username, password);
-                    // navigate to verify-email after storing register fields
-                    window.location.href = "/verify-email";
+                    navigate("/verify-email");
                   }}
-                  onSwitchToLogin={() => (window.location.href = "/login")}
+                  onSwitchToLogin={() => navigate("/login")}
                 />
-              }
-            />
+              </div>
+            </div>
+          }
+        />
 
-            <Route
-              path="/verify-email"
-              element={
-                <EmailVerification
-                  email={userEmail}
-                  username={registerUsername}
-                  password={registerPassword}
-                  onVerificationComplete={(t, u) => {
-                    handleVerificationComplete(t, u);
-                    window.location.href = "/dashboard";
-                  }}
-                  onBackToRegister={() => (window.location.href = "/register")}
-                />
-              }
-            />
-
-            <Route
-              path="/dashboard"
-              element={
-                // user ? (
-                  userExists() ? (
-                  <Dashboard
-                    user={user}
-                    onNavigate={(path) => (window.location.href = path)}
-                    onSignOut={signOut}
+        <Route
+          path="/verify-email"
+          element={
+            userEmail ? (
+              <div className="flex items-center justify-center">
+                <div className="w-full max-w-md">
+                  <EmailVerification
+                    email={userEmail}
+                    username={registerUsername}
+                    password={registerPassword}
+                    onVerificationComplete={(t, u) => {
+                      handleVerificationComplete(t, u);
+                      navigate("/dashboard", { replace: true });
+                    }}
+                    onBackToRegister={() => navigate("/register")}
                   />
-                ) : (
-                  <Navigate to="/login" replace />
-                )
-              }
-            />
+                </div>
+              </div>
+            ) : (
+              <Navigate to="/register" replace />
+            )
+          }
+        />
 
-            <Route
-              path="/items"
-              // element={user ? <ItemsList changeView={() => { /* unused */ }} /> : <Navigate to="/login" replace />}
-              element={userExists() ? <ItemsList/> : <Navigate to="/login" replace />}
-            />
+        {/* App pages full width */}
+        <Route
+          path="/dashboard"
+          element={
+            userExists() ? (
+              <Dashboard user={user} onNavigate={(p) => navigate(p)} onSignOut={signOut} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
 
-            <Route
-              path="/add-item"
-              // element={user ? <AddItem changeView={() => { /* unused */ }} /> : <Navigate to="/login" replace />}
-              element={userExists() ? <AddItem/> : <Navigate to="/login" replace />}
-            />
+        <Route path="/items" element={userExists() ? <ItemsList /> : <Navigate to="/login" replace />} />
+        <Route path="/add-item" element={userExists() ? <AddItem /> : <Navigate to="/login" replace />} />
+        <Route path="/items/:id" element={userExists() ? <ItemShowWrapper /> : <Navigate to="/login" replace />} />
 
-            <Route
-              path="/items/:id"
-              element={
-                userExists() ? (
-                  <ItemShowWrapper/>
-                ) : (
-                  <Navigate to="/login" replace />
-                )
-              }
-            />
-
-
-            {/* Fallback */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </div>
-      </div>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </div>
-  );
+  </div>
+);
+
 }
 
 function ItemShowWrapper() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+
   const itemId = Number(id);
   if (Number.isNaN(itemId)) {
     return <div className="p-4">Invalid item id</div>;
@@ -189,7 +195,7 @@ function ItemShowWrapper() {
     <ItemShow
       id={itemId}
       onEdit={(iid) => navigate(`/items/${iid}/edit`)}
-      onDelete={(iid) => navigate("/items")}
+      onDelete={() => navigate("/items")}
     />
   );
 }
