@@ -126,11 +126,7 @@ router.post("/addItem", requireAuth, async (req: AuthRequest, res, next) => {
   }
 });
 
-// new part for show in map:
-
-// GET /items/map
-// Returns lightweight items for showing on map pins
-// GET /items/map-items
+// ardalan's bs
 router.get("/map-items", async (req, res, next) => {
   try {
     const items = await prisma.items.findMany({
@@ -175,6 +171,7 @@ router.get("/map-items", async (req, res, next) => {
 });
 
 
+
 // GET /items/count
 // no queries yet
 router.get("/count", async (req, res, next) => {
@@ -190,8 +187,9 @@ router.get("/count", async (req, res, next) => {
 });
 
 // GET /items
-// query: page, limit, minLat, maxLat, minLong, maxLong
+// query: page, limit, minLat, maxLat, minLong, maxLong, searchText, type, tagIds, tagMode
 // example query: {{baseURL}}/items?page=1&limit=50&minLat=30&maxLat=60&minLong=60&maxLong=120
+//                                        &searchText=wallet&tagIds=1,2,3,4&tagMode=any
 router.get("/", async (req, res, next) => {
   try {
     const {
@@ -201,6 +199,10 @@ router.get("/", async (req, res, next) => {
       maxLat,
       minLong,
       maxLong,
+      searchText,
+      type,
+      tagIds,
+      tagMode,
     } = req.query as {
       page?: string;
       limit?: string;
@@ -208,6 +210,10 @@ router.get("/", async (req, res, next) => {
       maxLat?: string;
       minLong?: string;
       maxLong?: string;
+      searchText?: string;
+      type?: string;
+      tagIds?: string;
+      tagMode?: "any"| "all";
     };
 
     // page and item calculation
@@ -253,6 +259,63 @@ router.get("/", async (req, res, next) => {
       }
     }
 
+    // text or descroption search
+    if (searchText && searchText.trim() !== "") {
+      where.AND = [
+        ...(where.AND || []),
+        {
+          OR: [
+            { title: { contains: searchText, mode: "insensitive" } },
+            { description: { contains: searchText, mode: "insensitive" } },
+          ],
+        },
+      ];
+    }
+
+    // type condition
+    if (type) {
+      const normalized = type.toLowerCase();
+      if (normalized === "lost" || normalized === "found") {
+        where.type = normalized;
+      }
+    }
+
+    // tagIds seperation
+    const tagIdsArray =
+      typeof tagIds === "string" && tagIds.trim() !== "" ? tagIds
+            .split(",")
+            .map((s) => Number(s.trim()))
+            .filter((n) => Number.isFinite(n) && n > 0)
+        : [];
+
+    // tagIds condition
+    if (tagIdsArray.length > 0){
+      const validTags = await prisma.tags.findMany({
+        where: { tid: { in: tagIdsArray } },
+        select: { tid: true },
+      });
+
+      if (validTags.length !== tagIdsArray.length) {
+        throw new Error("One or more tags do not exist");
+      }
+
+      const mode = (tagMode || "all").toLowerCase();
+
+      if (mode === "all") {
+        where.AND = [
+          ...(where.AND || []),
+          ...tagIdsArray.map((tid) => ({
+            item_tags: { some: { tid } },
+          })),
+        ];
+      } else {
+        where.item_tags = {
+          some: { tid: { in: tagIdsArray } },
+        };
+      } 
+    }
+
+    // serach based on conditions
     const items = await prisma.items.findMany({
       where, 
       orderBy: { add_date: "desc" },
@@ -263,6 +326,8 @@ router.get("/", async (req, res, next) => {
         title: true,
         description: true,
         type: true,
+        latitude: true,
+        longitude: true,
         add_date: true,
 
         images: {
@@ -288,9 +353,11 @@ router.get("/", async (req, res, next) => {
         title: item.title,
         description: item.description,
         type: item.type,
+        latitude: item.latitude,
+        longitude: item.longitude,
         createdAt: item.add_date,
-        imageUrls: item.images.map((img) => img.image_url),
-        tagIds: item.item_tags.map(s => s.tid),
+        imageUrls: item.images[0]?.image_url ?? null,
+        tagIds: item.item_tags.map(t => t.tid),
       })),
       pagination: usePagination
         ? { page: pageNum, limit: take }
