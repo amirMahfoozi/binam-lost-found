@@ -9,6 +9,8 @@ import itemsRouter from "./routes/items";
 import uploadRouter from "./routes/upload";
 import tagsRouter from "./routes/tags";
 import { errorHandler } from "./middleware/errorHandler";
+import chatbotRouter from "./routes/chatbot";
+
 
 // import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,6 +36,8 @@ const __dirname = path.dirname(__filename);
   app.use("/items", itemsRouter);
   app.use("/upload", uploadRouter);
   app.use("/tags", tagsRouter);
+  app.use("/chatbot", chatbotRouter);
+
 
   // 404 handler
   app.use((req, res) => {

@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "dev:api": "tsx watch src/index.ts",
+    "start:api": "tsx src/index.ts"
   },
   "dependencies": {
     "@prisma/client": "^7.2.0",
