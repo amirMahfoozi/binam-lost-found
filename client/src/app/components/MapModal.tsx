@@ -21,15 +21,17 @@ type MapModalProps = {
   onClose: () => void;
 };
 
+// IMPORTANT: This assumes /items returns lat/lng + tagIds.
+// If your /items does NOT include latitude/longitude, you MUST switch to /items/map-items.
 type MapItem = {
   id: number;
   title: string;
-  description: string;
+  description?: string;
   type: string;
   latitude: number | string;
   longitude: number | string;
   createdAt?: string;
-  imageUrls?: string | null;
+  imageUrls?: string[] | string | null;
   tagIds: number[];
 };
 
@@ -42,6 +44,13 @@ function toAbsoluteUrl(url?: string | null) {
   return `${API_BASE}${url.startsWith("/") ? "" : "/"}${url}`;
 }
 
+function firstImageUrl(imageUrls?: string[] | string | null) {
+  if (!imageUrls) return null;
+  if (Array.isArray(imageUrls)) return imageUrls[0] ?? null;
+  return imageUrls; // in case server returns a single string
+}
+
+// --- Colored marker icons (DivIcon with SVG) ---
 function makePinIcon(color: string) {
   const svg = `
     <svg width="28" height="28" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -82,6 +91,7 @@ function FitToGeoJson({ data }: { data: any }) {
   return null;
 }
 
+// Optional: long press to add item at position
 function HoldToAddItem({
   onHold,
   holdMs = 5000,
@@ -147,21 +157,34 @@ function HoldToAddItem({
 }
 
 export function MapModal({ open, onClose }: MapModalProps) {
+  const navigate = useNavigate();
+
   const [campusGeoJson, setCampusGeoJson] = useState<any>(null);
+
   const [items, setItems] = useState<MapItem[]>([]);
   const [loadingPins, setLoadingPins] = useState(false);
   const [pinsError, setPinsError] = useState<string | null>(null);
 
-  const [tagById, setTagById] = useState<Record<number, TagDto>>({});
-
-  const navigate = useNavigate();
+  // picker pin
+  const [pickPos, setPickPos] = useState<[number, number]>(FALLBACK_CENTER);
+  const [search, setSearch] = useState("");
+  // tags for filter UI
+  const [tags, setTags] = useState<TagDto[]>([]);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  const [appliedTagIds, setAppliedTagIds] = useState<number[]>([]);
 
   useEffect(() => {
     if (!open) return;
+
     fetch("/sharif-campus.geojson")
       .then((r) => r.json())
       .then((j) => setCampusGeoJson(j))
       .catch(() => setCampusGeoJson(null));
+  }, [open]);
+
+  useEffect(() => {
+    if (open) setPickPos(FALLBACK_CENTER);
   }, [open]);
 
   useEffect(() => {
@@ -170,12 +193,20 @@ export function MapModal({ open, onClose }: MapModalProps) {
     setLoadingPins(true);
     setPinsError(null);
 
-    Promise.all([loadItems(), loadTags()])
-      .then(([itemsRes, tags]) => {
+    Promise.all([
+      loadItems({
+        page: 1,
+        limit: 500,
+        searchText: search.trim() || undefined,
+        tagIds: appliedTagIds.length ? appliedTagIds.join(",") : undefined,
+        tagMode: "any", // or "all"
+        // type: "lost" or "found" if you later add a type filter
+      }),
+      loadTags(),
+    ])
+      .then(([itemsRes, tagsRes]) => {
         setItems(Array.isArray(itemsRes.items) ? (itemsRes.items as any) : []);
-        const map: Record<number, TagDto> = {};
-        tags.forEach((t) => (map[t.tid] = t));
-        setTagById(map);
+        setTags(Array.isArray(tagsRes) ? tagsRes : []);
       })
       .catch((e: any) => setPinsError(e?.message || "Failed to load map items"))
       .finally(() => setLoadingPins(false));
@@ -185,6 +216,28 @@ export function MapModal({ open, onClose }: MapModalProps) {
     () => ({ color: "red", weight: 3, fillColor: "red", fillOpacity: 0.12 }),
     []
   );
+
+  // ✅ filter items by applied tags (OR logic: matches any selected tag)
+  const filteredItems = useMemo(() => {
+    const q = search.trim().toLowerCase();
+  
+    return items.filter((it) => {
+      // 1) tag filter (OR)
+      const passTag =
+        appliedTagIds.length === 0 ||
+        (Array.isArray(it.tagIds) && it.tagIds.some((tid) => appliedTagIds.includes(tid)));
+  
+      if (!passTag) return false;
+  
+      // 2) search filter (title/description)
+      if (!q) return true;
+  
+      const title = (it.title ?? "").toLowerCase();
+      const desc = (it.description ?? "").toLowerCase();
+      return title.includes(q) || desc.includes(q);
+    });
+  }, [items, appliedTagIds, search]);
+  
 
   if (!open) return null;
 
@@ -201,15 +254,82 @@ export function MapModal({ open, onClose }: MapModalProps) {
             {pinsError && <p className="text-xs text-red-600">{pinsError}</p>}
           </div>
 
-          <button onClick={onClose} className="inline-flex items-center justify-center rounded-lg p-2 hover:bg-gray-100">
+          <button
+            onClick={onClose}
+            className="inline-flex items-center justify-center rounded-lg p-2 hover:bg-gray-100"
+            aria-label="Close"
+          >
             <X className="size-5" />
           </button>
         </div>
 
         <div className="h-[70vh] relative">
           <MapContainer center={FALLBACK_CENTER} zoom={16} scrollWheelZoom className="h-full w-full">
-            <TileLayer attribution='&copy; OpenStreetMap contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            <TileLayer
+              attribution='&copy; OpenStreetMap contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
 
+            {/* boundary */}
+            {campusGeoJson && (
+              <>
+                <GeoJSON data={campusGeoJson} style={boundaryStyle as any} />
+                <FitToGeoJson data={campusGeoJson} />
+              </>
+            )}
+            {/* Search bar */}
+<div className="absolute left-4 top-30 z-[1200] w-[260px]">
+  <div className="relative">
+    <input
+      value={search}
+      onChange={(e) => setSearch(e.target.value)}
+      placeholder="Search title or description…"
+      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 pr-9 text-sm shadow focus:outline-none focus:ring-2 focus:ring-blue-500"
+    />
+    {search && (
+      <button
+        type="button"
+        onClick={() => setSearch("")}
+        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800"
+        aria-label="Clear search"
+      >
+        ×
+      </button>
+    )}
+  </div>
+
+  {/* optional: result count */}
+  <div className="mt-1 text-xs text-gray-600 bg-white/80 inline-block rounded px-2 py-1 shadow">
+    Showing {filteredItems.length} item(s)
+  </div>
+</div>
+
+            {/* picker pin */}
+            <Marker
+              position={pickPos}
+              draggable
+              eventHandlers={{
+                dragend: (e) => {
+                  const m = e.target as any;
+                  const ll = m.getLatLng();
+                  setPickPos([ll.lat, ll.lng]);
+                },
+              }}
+            >
+              <Popup>
+                <div className="text-sm">
+                  <div className="font-semibold">Selected location</div>
+                  <div className="text-xs text-gray-600">
+                    {pickPos[0].toFixed(6)}, {pickPos[1].toFixed(6)}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Drag this pin to choose where to add an item.
+                  </div>
+                </div>
+              </Popup>
+            </Marker>
+
+            {/* hold to add */}
             <HoldToAddItem
               onHold={(lat, lng) => {
                 onClose();
@@ -217,37 +337,61 @@ export function MapModal({ open, onClose }: MapModalProps) {
               }}
             />
 
-            {campusGeoJson && (
-              <>
-                <GeoJSON data={campusGeoJson} style={boundaryStyle as any} />
-                <FitToGeoJson data={campusGeoJson} />
-              </>
-            )}
-
-            {items
-              .map((it) => ({ ...it, lat: Number(it.latitude), lng: Number(it.longitude) }))
+            {/* pins */}
+            {filteredItems
+              .map((it) => ({
+                ...it,
+                lat: Number(it.latitude),
+                lng: Number(it.longitude),
+              }))
               .filter((it) => Number.isFinite(it.lat) && Number.isFinite(it.lng))
               .map((it) => {
                 const t = normalizeType(it.type);
                 const icon = t === "found" ? FOUND_ICON : LOST_ICON;
-                const imgSrc = toAbsoluteUrl(it.imageUrls);
+
+                const img = firstImageUrl(it.imageUrls);
+                const imgSrc = toAbsoluteUrl(img);
 
                 return (
                   <Marker key={it.id} position={[it.lat, it.lng]} icon={icon}>
                     <Popup>
-                      <div className="min-w-[180px]">
+                      <div className="min-w-[190px]">
                         <div className="text-sm font-semibold">{it.title}</div>
                         <div className="text-xs text-gray-600">
                           {t === "found" ? "FOUND" : "LOST"}
                           {it.createdAt ? ` • ${new Date(it.createdAt).toLocaleString()}` : ""}
                         </div>
 
+                        {/* show category */}
+                        <div className="mt-1 text-xs">
+                          <span className="font-semibold">Category:</span>{" "}
+                          {(it.tagIds || [])
+                            .map((tid) => tags.find((x) => x.tid === tid)?.tagname)
+                            .filter(Boolean)
+                            .join(", ") || "—"}
+                        </div>
+
+                        {/* show description */}
+                        {it.description ? (
+                          <div className="mt-1 text-xs text-gray-700 line-clamp-3">{it.description}</div>
+                        ) : null}
+
                         {imgSrc ? (
-                          <img src={imgSrc} alt={it.title} className="mt-2 h-24 w-full rounded-md object-cover" />
+                          <img
+                            src={imgSrc}
+                            alt={it.title}
+                            className="mt-2 h-24 w-full rounded-md object-cover"
+                          />
                         ) : null}
 
                         <div className="mt-2">
-                          <button className="text-blue-600 text-sm underline" onClick={() => navigate(`/items/${it.id}`)}>
+                          <button
+                            className="text-blue-600 text-sm underline"
+                            onClick={() => {
+                              onClose();
+                              navigate(`/items/${it.id}`);
+                            }}
+                          >
                             View details
                           </button>
                         </div>
@@ -257,6 +401,100 @@ export function MapModal({ open, onClose }: MapModalProps) {
                 );
               })}
           </MapContainer>
+
+          {/* Filter button */}
+          <div className="absolute left-4 top-20 z-[1000]">
+            <button
+              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-blue-700"
+              onClick={() => setFilterOpen((s) => !s)}
+            >
+              Filter by tag
+              {appliedTagIds.length > 0 ? ` (${appliedTagIds.length})` : ""}
+            </button>
+          </div>
+
+          {/* Filter panel */}
+          {filterOpen && (
+            <div className="absolute right-4 top-32 z-[1200] w-60 rounded-xl bg-white p-3 shadow">
+              <div className="text-sm font-semibold mb-2">Tags</div>
+
+              <div className="space-y-2 max-h-56 overflow-auto">
+                {tags.map((t) => {
+                  const checked = selectedTagIds.includes(t.tid);
+                  return (
+                    <label key={t.tid} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          setSelectedTagIds((prev) =>
+                            prev.includes(t.tid)
+                              ? prev.filter((x) => x !== t.tid)
+                              : [...prev, t.tid]
+                          );
+                        }}
+                      />
+                      <span
+                        className="inline-block h-2.5 w-2.5 rounded-full"
+                        style={t.color ? { backgroundColor: t.color } : undefined}
+                      />
+                      <span>{t.tagname}</span>
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="mt-3 flex gap-2">
+                <button
+                  className="flex-1 rounded-lg bg-blue-600 px-3 py-2 text-xs text-white hover:bg-blue-700"
+                  onClick={() => {
+                    setAppliedTagIds(selectedTagIds);
+                    setFilterOpen(false);
+                  }}
+                >
+                  Apply
+                </button>
+
+                <button
+                  className="flex-1 rounded-lg border px-3 py-2 text-xs hover:bg-gray-50"
+                  onClick={() => {
+                    setSelectedTagIds([]);
+                    setAppliedTagIds([]);
+                    setFilterOpen(false);
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Add item button */}
+          <div className="absolute bottom-4 right-4 z-[999]">
+            <button
+              className="rounded-xl bg-blue-600 px-4 py-3 text-white shadow-lg hover:bg-blue-700"
+              onClick={() => {
+                const [lat, lng] = pickPos;
+                onClose();
+                navigate(`/add-item?lat=${lat}&lng=${lng}`);
+              }}
+            >
+              Add item at this location
+            </button>
+          </div>
+
+          {/* Legend */}
+          <div className="absolute right-4 top-4 z-[998] rounded-lg bg-white/90 p-3 text-xs shadow space-y-2">
+            <div className="font-semibold text-gray-800">Legend</div>
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-3 w-3 rounded-full bg-red-500" />
+              <span>Lost</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-3 w-3 rounded-full bg-green-500" />
+              <span>Found</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
