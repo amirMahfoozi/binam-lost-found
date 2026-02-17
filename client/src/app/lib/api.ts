@@ -238,3 +238,31 @@ export async function deleteItem(
     setDeleting(false);
   }
 }
+
+// ---------- Chatbot ----------
+export type ChatbotSuggestion = {
+  id: number;
+  title: string;
+  type: string;
+  imageUrl: string | null;
+  descriptionSnippet: string;
+  score: number;
+  link: string; // frontend route, e.g. /items/123
+};
+
+export type ChatbotResponse = {
+  intent: string;
+  reply: string;
+  keywords?: string[];
+  suggestions?: ChatbotSuggestion[];
+};
+
+export async function sendChatbotMessage(message: string): Promise<ChatbotResponse> {
+  const res = await fetch(`${API_BASE}/chatbot/message`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return res.json();
+}

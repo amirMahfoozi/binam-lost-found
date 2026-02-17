@@ -13,6 +13,8 @@ import { LoginForm } from "./components/LoginForm";
 import { RegisterForm } from "./components/RegisterForm";
 import { EmailVerification } from "./components/EmailVerification";
 import { Header } from "./components/Header";
+import { ChatbotWidget } from "./components/ChatbotWidget";
+
 
 import AddItem from "./pages/AddItem";
 import ItemsList from "./pages/ItemsList";
@@ -177,6 +179,7 @@ return (
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>
+    <ChatbotWidget />
   </div>
 );
 
