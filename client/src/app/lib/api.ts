@@ -12,7 +12,7 @@ async function parseError(res: Response) {
   return `Request failed: ${res.status}`;
 }
 
-// Step 1: register -> backend sends OTP (or logs it)
+// ---------- Auth ----------
 export async function register(email: string, username: string, password: string) {
   const res = await fetch(`${API_BASE}/auth/register`, {
     method: "POST",
@@ -23,7 +23,6 @@ export async function register(email: string, username: string, password: string
   return res.json() as Promise<{ success: boolean; message: string }>;
 }
 
-// Step 2: verify otp -> backend creates user and returns token
 export async function verifyOtp(email: string, otp: string) {
   const res = await fetch(`${API_BASE}/auth/verify-otp`, {
     method: "POST",
@@ -50,27 +49,40 @@ export async function login(email: string, password: string) {
   }>;
 }
 
+// ---------- Upload ----------
 export async function uploadImage(file: File): Promise<string> {
   const token = localStorage.getItem("token");
   const fd = new FormData();
   fd.append("image", file);
+
   const res = await fetch(`${API_BASE}/upload/addImage`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
     },
-    body: fd
-   });
+    body: fd,
+  });
+
   if (!res.ok) {
     const txt = await res.text();
     throw new Error(txt || "Image upload failed");
   }
+
   const data = await res.json();
   return data.url;
 }
 
+// ---------- Tags ----------
+export type TagDto = { tid: number; tagname: string; color: string | null };
+
+export async function loadTags(): Promise<TagDto[]> {
+  const res = await fetch(`${API_BASE}/tags`);
+  if (!res.ok) throw new Error(await parseError(res));
+  return res.json();
+}
+
+// ---------- Items ----------
 export async function submitItem(payload: ItemPayload) {
-  // const token = localStorage.getItem("token") || "";
   const token = localStorage.getItem("token");
   const res = await fetch(`${API_BASE}/items/addItem`, {
     method: "POST",
@@ -80,19 +92,23 @@ export async function submitItem(payload: ItemPayload) {
     },
     body: JSON.stringify(payload),
   });
+
   if (!res.ok) {
     const txt = await res.text();
     throw new Error(txt || "Add item failed");
   }
+
   return await res.json();
 }
 
-export async function loadCount(setCount: (n: number)=>null, setError: (err: string|null)=>null) {
+export async function loadCount(
+  setCount: (n: number) => void,
+  setError: (err: string | null) => void
+) {
   try {
     const res = await fetch(`${API_BASE}/items/count`);
-    if (!res.ok) throw new Error(await res.text() || "Failed to load count");
+    if (!res.ok) throw new Error((await res.text()) || "Failed to load count");
     const data = await res.json();
-    // assume server returns { count: number } or a number directly; handle both
     const c = typeof data === "number" ? data : data.count ?? null;
     setCount(c);
   } catch (err: any) {
@@ -100,41 +116,36 @@ export async function loadCount(setCount: (n: number)=>null, setError: (err: str
   }
 }
 
-export type MapTag = { tid: number; tagname: string; color: string | null };
+// Generic loader (works for list + map + filters)
+export async function loadItems(params?: Record<string, string | number | undefined>) {
+  const qs =
+    params
+      ? "?" +
+        Object.entries(params)
+          .filter(([, v]) => v !== undefined && v !== "")
+          .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+          .join("&")
+      : "";
 
-export type MapItem = {
-  id: number;
-  title: string;
-  description?: string;
-  type: string;
-  latitude: number | string;
-  longitude: number | string;
-  createdAt?: string;
-  imageUrl?: string | null;
-  tags?: MapTag[]; // ✅
-};
-
-
-export async function loadMapItems(): Promise<MapItem[]> {
-  const res = await fetch(`${API_BASE}/items/map-items`);
+  const res = await fetch(`${API_BASE}/items${qs}`);
   if (!res.ok) throw new Error(await parseError(res));
-  const data = await res.json();
-  return (data?.items ?? []) as MapItem[];
+  return res.json() as Promise<{ items: Item[]; pagination: any }>;
 }
 
-
-export async function loadPage(p: number,
-                                PAGE_SIZE: number,
-                                setLoading: (isLoading: boolean)=>null,
-                                setError: (err: string|null)=>null,
-                                setItems: (items: Item[])=>null) {
+export async function loadPage(
+  p: number,
+  PAGE_SIZE: number,
+  setLoading: (isLoading: boolean) => void,
+  setError: (err: string | null) => void,
+  setItems: (items: Item[]) => void
+) {
   setLoading(true);
   setError(null);
+
   try {
     const res = await fetch(`${API_BASE}/items?page=${p}&limit=${PAGE_SIZE}`);
-    if (!res.ok) throw new Error(await res.text() || "Failed to load items");
+    if (!res.ok) throw new Error((await res.text()) || "Failed to load items");
     const data = await res.json();
-    // expect data: { items: Item[] } or Item[]
     const list: Item[] = Array.isArray(data) ? data : data.items ?? [];
     setItems(list);
   } catch (err: any) {
@@ -144,11 +155,12 @@ export async function loadPage(p: number,
     setLoading(false);
   }
 }
+
 export async function showItem(
   id: number,
-  setItem: (item: ItemResponse | null) => null,
-  setError: (err: string | null) => null,
-  setLoading: (isLoading: boolean) => null
+  setItem: (item: ItemResponse | null) => void,
+  setError: (err: string | null) => void,
+  setLoading: (isLoading: boolean) => void
 ) {
   const token = localStorage.getItem("token");
 
@@ -160,7 +172,6 @@ export async function showItem(
     "Content-Type": "application/json",
   };
 
-  // ✅ only attach Authorization if token exists
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
@@ -191,21 +202,29 @@ export async function showItem(
   };
 }
 
-export async function deleteItem(id: number, 
-                                    setItem: (item: ItemResponse|null)=>null, 
-                                    setError: (err: string|null)=>null, 
-                                    setDeleting: (isDeleting: boolean)=>null,
-                                    onDeleted?: (id: number) => void) {
+export async function deleteItem(
+  id: number,
+  setItem: (item: ItemResponse | null) => void,
+  setError: (err: string | null) => void,
+  setDeleting: (isDeleting: boolean) => void,
+  onDeleted?: (id: number) => void
+) {
   const token = localStorage.getItem("token");
 
   if (!confirm("Delete this item? This action cannot be undone.")) return;
+
   setDeleting(true);
   setError(null);
 
   try {
-    const res = await fetch(`${API_BASE}/items/${id}`, {method: "DELETE",
-                                      headers: {"Content-Type": "application/json",
-                                        Authorization: `Bearer ${token}`}});
+    const res = await fetch(`${API_BASE}/items/${id}`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       throw new Error(body?.error || `HTTP ${res.status}`);
@@ -218,6 +237,4 @@ export async function deleteItem(id: number,
   } finally {
     setDeleting(false);
   }
-};
-
-
+}

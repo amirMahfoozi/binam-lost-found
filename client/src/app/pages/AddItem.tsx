@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import "../../styles/AddItem.css";
 
-import { uploadImage, submitItem } from "../lib/api";
+import { loadTags, submitItem, uploadImage, TagDto } from "../lib/api";
 import { Link, useLocation } from "react-router-dom";
 
 export type ItemPayload = {
@@ -14,7 +14,6 @@ export type ItemPayload = {
   imageUrls: string[];
 };
 
-export const TAG_OPTIONS = ["wallet", "phone", "keys", "bag", "clothes"];
 const TYPE_OPTIONS: Array<ItemPayload["type"]> = ["LOST", "FOUND"];
 
 export default function AddItem() {
@@ -25,12 +24,16 @@ export default function AddItem() {
   const [type, setType] = useState<ItemPayload["type"]>("LOST");
   const [latitude, setLatitude] = useState<string>("");
   const [longitude, setLongitude] = useState<string>("");
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+
+  const [tags, setTags] = useState<TagDto[]>([]);
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  const [tagsLoading, setTagsLoading] = useState(false);
+  const [tagsError, setTagsError] = useState<string | null>(null);
+
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  // ✅ Prefill from map hold: /add-item?lat=...&lng=...&type=lost
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const lat = params.get("lat");
@@ -49,9 +52,19 @@ export default function AddItem() {
     }
   }, [location.search]);
 
-  function toggleTag(tag: string) {
-    setSelectedTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+  useEffect(() => {
+    setTagsLoading(true);
+    setTagsError(null);
+
+    loadTags()
+      .then((t) => setTags(t))
+      .catch((e: any) => setTagsError(e?.message || "Failed to load tags"))
+      .finally(() => setTagsLoading(false));
+  }, []);
+
+  function toggleTag(tid: number) {
+    setSelectedTagIds((prev) =>
+      prev.includes(tid) ? prev.filter((x) => x !== tid) : [...prev, tid]
     );
   }
 
@@ -59,21 +72,17 @@ export default function AddItem() {
     e.preventDefault();
     setMessage(null);
 
-    if (!title.trim()) { setMessage("Title is required."); return; }
-    if (!type) { setMessage("Type is required."); return; }
-    if (!latitude.trim() || !longitude.trim()) { setMessage("Coordination is required."); return; }
+    if (!title.trim()) return setMessage("Title is required.");
+    if (!description.trim()) return setMessage("Description is required.");
+    if (!latitude.trim() || !longitude.trim()) return setMessage("Coordination is required.");
 
     const latNum = Number(latitude);
     const lonNum = Number(longitude);
     if (Number.isNaN(latNum) || Number.isNaN(lonNum)) {
-      setMessage("Latitude and longitude must be numbers.");
-      return;
+      return setMessage("Latitude and longitude must be numbers.");
     }
 
-    if (selectedTags.length === 0) {
-      setMessage("Select at least one tag.");
-      return;
-    }
+    if (selectedTagIds.length === 0) return setMessage("Select at least one tag.");
 
     setLoading(true);
     try {
@@ -86,15 +95,20 @@ export default function AddItem() {
         type,
         latitude: latNum,
         longitude: lonNum,
-        tagIds: selectedTags.map((s) => TAG_OPTIONS.indexOf(s) + 1), // ✅ 1-based IDs
+        tagIds: selectedTagIds,
         imageUrls: imageUrl ? [imageUrl] : [],
       };
 
       await submitItem(payload);
 
       setMessage("Item added successfully.");
-      setTitle(""); setDescription(""); setType("LOST"); setLatitude(""); setLongitude("");
-      setSelectedTags([]); setImageFile(null);
+      setTitle("");
+      setDescription("");
+      setType("LOST");
+      setLatitude("");
+      setLongitude("");
+      setSelectedTagIds([]);
+      setImageFile(null);
 
       const el = document.getElementById("image-input") as HTMLInputElement | null;
       if (el) el.value = "";
@@ -113,22 +127,16 @@ export default function AddItem() {
         <h2 className="form-title">Add Lost / Found Item</h2>
 
         <label className="label">Title *</label>
-        <input className="input" value={title} onChange={e => setTitle(e.target.value)} />
+        <input className="input" value={title} onChange={(e) => setTitle(e.target.value)} />
 
-        <label className="label">Description</label>
-        <textarea className="textarea" value={description} onChange={e => setDescription(e.target.value)} />
+        <label className="label">Description *</label>
+        <textarea className="textarea" value={description} onChange={(e) => setDescription(e.target.value)} />
 
         <label className="label">Type *</label>
         <div className="type-options">
-          {TYPE_OPTIONS.map(opt => (
+          {TYPE_OPTIONS.map((opt) => (
             <label key={opt} className={`type-label ${type === opt ? "type-selected" : ""}`}>
-              <input
-                type="radio"
-                name="item-type"
-                value={opt}
-                checked={type === opt}
-                onChange={() => setType(opt)}
-              />
+              <input type="radio" name="item-type" value={opt} checked={type === opt} onChange={() => setType(opt)} />
               <span className="type-text">{opt}</span>
             </label>
           ))}
@@ -137,44 +145,51 @@ export default function AddItem() {
         <div className="row">
           <div className="col">
             <label className="label">Latitude *</label>
-            <input className="input" value={latitude} onChange={e => setLatitude(e.target.value)} />
+            <input className="input" value={latitude} onChange={(e) => setLatitude(e.target.value)} />
           </div>
           <div className="col">
             <label className="label">Longitude *</label>
-            <input className="input" value={longitude} onChange={e => setLongitude(e.target.value)} />
+            <input className="input" value={longitude} onChange={(e) => setLongitude(e.target.value)} />
           </div>
         </div>
 
         <label className="label">Tags * (select at least one)</label>
-        <div className="tags">
-          {TAG_OPTIONS.map(tag => (
-            <button
-              type="button"
-              key={tag}
-              className={`tag-btn ${selectedTags.includes(tag) ? "tag-selected" : ""}`}
-              onClick={() => toggleTag(tag)}
-            >
-              {tag}
-            </button>
-          ))}
-        </div>
+
+        {tagsLoading && <div className="message">Loading tags…</div>}
+        {tagsError && <div className="message">{tagsError}</div>}
+
+        {!tagsLoading && !tagsError && (
+          <div className="tags">
+            {tags.map((tag) => (
+              <button
+                type="button"
+                key={tag.tid}
+                className={`tag-btn ${selectedTagIds.includes(tag.tid) ? "tag-selected" : ""}`}
+                onClick={() => toggleTag(tag.tid)}
+              >
+                {tag.tagname}
+              </button>
+            ))}
+          </div>
+        )}
 
         <label className="label">Image</label>
-        <input id="image-input" className="file-input" type="file" accept="image/*" onChange={e => {
-          const f = e.target.files?.[0] || null;
-          setImageFile(f);
-        }} />
+        <input
+          id="image-input"
+          className="file-input"
+          type="file"
+          accept="image/*"
+          onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+        />
 
         <div className="actions">
           <button className="submit-btn" type="submit" disabled={loading}>
             {loading ? "Submitting..." : "Submit"}
           </button>
-          {/* <button className="cancel-btn" type="Cancel" disabled={loading} onClick={() => changeView("dashboard")}>
-            {loading ? "Submitting..." : "Cancel"}
-          </button> */}
+
           <Link to="/dashboard">
-            <button className="cancel-btn" type="Cancel" disabled={loading}>
-              {loading ? "Submitting..." : "Cancel"}
+            <button className="cancel-btn" type="button" disabled={loading}>
+              Cancel
             </button>
           </Link>
         </div>
