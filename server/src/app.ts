@@ -8,6 +8,7 @@ import authRouter from "./routes/auth";
 import itemsRouter from "./routes/items";
 import uploadRouter from "./routes/upload";
 import tagsRouter from "./routes/tags";
+import commentsRouter from "./routes/comments";
 import { errorHandler } from "./middleware/errorHandler";
 import chatbotRouter from "./routes/chatbot";
 
@@ -36,6 +37,7 @@ const __dirname = path.dirname(__filename);
   app.use("/items", itemsRouter);
   app.use("/upload", uploadRouter);
   app.use("/tags", tagsRouter);
+  app.use("/comments", commentsRouter);
   app.use("/chatbot", chatbotRouter);
 
 
@@ -49,5 +51,6 @@ const __dirname = path.dirname(__filename);
 
   return app;
 }
+
 
 
