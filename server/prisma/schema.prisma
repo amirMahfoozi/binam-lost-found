@@ -8,6 +8,19 @@ datasource db {
   provider = "postgresql"
 }
 
+model comment_reports {
+  cid       Int
+  uid       Int
+  createdAt DateTime @default(now()) @db.Timestamp(6)
+
+  comments comments @relation(fields: [cid], references: [cid], onDelete: Cascade, onUpdate: NoAction)
+  users    users    @relation(fields: [uid], references: [uid], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([cid, uid])
+  @@index([cid], map: "idx_comment_reports_cid")
+  @@index([uid], map: "idx_comment_reports_uid")
+}
+
 model comments {
   cid          Int       @id @default(autoincrement())
   iid          Int?
@@ -17,6 +30,8 @@ model comments {
   date_added   DateTime? @default(now()) @db.Timestamp(6)
   items        items?    @relation(fields: [iid], references: [iid], onDelete: Cascade, onUpdate: NoAction)
   users        users?    @relation(fields: [uid], references: [uid], onDelete: Cascade, onUpdate: NoAction)
+
+  comment_reports comment_reports[]
 
   @@index([iid], map: "idx_comments_iid")
 }
@@ -88,4 +103,6 @@ model users {
   registeration_date DateTime?  @default(now()) @db.Timestamp(6)
   comments           comments[]
   items              items[]
+
+  comment_reports comment_reports[]
 }
