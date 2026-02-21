@@ -113,7 +113,14 @@ router.get("/items/:itemId/comments", optionalAuth, async (req: AuthRequest, res
     }
 
     const comments = await prisma.comments.findMany({
-      where: { iid },
+      // if comment has more than 5 reports hide comment (soft delete)
+      where: { 
+        iid, 
+        OR: [
+          { report_count: { lt: 5 } },
+          { report_count: null }
+        ] 
+      },
       orderBy: { date_added: "asc" },
       include: {
         users: {
@@ -128,6 +135,7 @@ router.get("/items/:itemId/comments", optionalAuth, async (req: AuthRequest, res
         iid: c.iid,
         uid: c.uid,
         comment_text: c.comment_text,
+        report_count: c.report_count,
         date_added: c.date_added,
         user: c.users ? { uid: c.users.uid, username: c.users.username } : null,
         permissions: {
@@ -135,6 +143,76 @@ router.get("/items/:itemId/comments", optionalAuth, async (req: AuthRequest, res
         },
       })),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /comments/:commentId/report
+router.post("/:commentId/report", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const commentId = Number(req.params.commentId);
+    if (!Number.isFinite(commentId)) {
+      return res.status(400).json({ error: "Invalid commentId" });
+    }
+
+    const userId = Number(req.user!.userId);
+    if (!Number.isFinite(userId)) {
+      return res.status(401).json({ error: "Invalid auth user" });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      // 1) Ensure comment exists
+      const existingComment = await tx.comments.findUnique({
+        where: { cid: commentId },
+        select: { cid: true, report_count: true },
+      });
+
+      if (!existingComment) {
+        return { status: 404 as const, body: { error: "Comment not found" } };
+      }
+
+      // 2) Ensure this user hasn't already reported this comment
+      const already = await tx.comment_reports.findUnique({
+        where: {
+          cid_uid: {
+            cid: commentId,
+            uid: userId,
+          },
+        },
+        select: { cid: true, uid: true },
+      });
+
+      if (already) {
+        return { status: 409 as const, body: { error: "You already reported this comment" } };
+      }
+
+      // 3) Record the report (creates the row with composite PK)
+      await tx.comment_reports.create({
+        data: {
+          cid: commentId,
+          uid: userId,
+        },
+      });
+
+      // 4) Increment report_count
+      const updated = await tx.comments.update({
+        where: { cid: commentId },
+        data: {
+          report_count: { increment: 1 },
+        },
+        select: { cid: true, report_count: true },
+      });
+
+      const newCount = updated.report_count ?? 0;
+
+      return {
+        status: 200 as const,
+        body: { success: true, reportCount: newCount },
+      };
+    });
+
+    return res.status(result.status).json(result.body);
   } catch (err) {
     next(err);
   }
