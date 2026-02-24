@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import "../../styles/ItemsList.css";
-import { loadCount, loadPage, loadTags, TagDto, API_BASE } from "../lib/api";
+import { loadCount, loadPage, loadTags, TagDto, API_BASE, loadCommentsCount } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Link } from "react-router-dom";
+import { MessageCircle } from "lucide-react";
 
 export type Item = {
   id: number;
@@ -31,6 +32,9 @@ export default function ItemsList() {
 
   const [tagById, setTagById] = useState<Record<number, TagDto>>({});
 
+  // ✅ comment counts: { [itemId]: number }
+  const [commentCountByItemId, setCommentCountByItemId] = useState<Record<number, number>>({});
+
   const totalPages = count ? Math.max(1, Math.ceil(count / PAGE_SIZE)) : 1;
 
   useEffect(() => {
@@ -50,6 +54,40 @@ export default function ItemsList() {
       })
       .catch(() => {});
   }, []);
+
+  // ✅ load comment counts for visible page items
+  useEffect(() => {
+    if (!items.length) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const results = await Promise.all(
+          items.map(async (it) => {
+            try {
+              const n = await loadCommentsCount(it.id);
+              return [it.id, n] as const;
+            } catch {
+              return [it.id, 0] as const;
+            }
+          })
+        );
+
+        if (cancelled) return;
+
+        const map: Record<number, number> = {};
+        results.forEach(([id, n]) => (map[id] = n));
+        setCommentCountByItemId(map);
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [items]);
 
   function goto(p: number) {
     if (p < 1) p = 1;
@@ -83,12 +121,35 @@ export default function ItemsList() {
           {items.map((item) => {
             const imgSrc = toAbsoluteUrl(item.imageUrls);
             const typeLabel = normalizeType(item.type);
+            const commentCount = commentCountByItemId[item.id] ?? 0;
 
             return (
-              <Link to={"/items/" + item.id} key={item.id}>
+              <Link to={"/items/" + item.id} key={item.id} style={{ textDecoration: "none" }}>
                 <div className={`item-card ${typeLabel === "FOUND" ? "found" : "lost"}`}>
                   <div className="item-image">
                     {imgSrc ? <img src={imgSrc} alt={item.title} /> : <div className="placeholder">No image</div>}
+
+                    {/* ✅ Instagram-like comment badge */}
+                    <div
+                      style={{
+                        position: "absolute",
+                        right: 10,
+                        bottom: 10,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                        background: "rgba(255,255,255,0.9)",
+                        borderRadius: 9999,
+                        padding: "6px 10px",
+                        boxShadow: "0 6px 18px rgba(0,0,0,0.15)",
+                        fontSize: 12,
+                        fontWeight: 700,
+                      }}
+                      title={`${commentCount} comments`}
+                    >
+                      <MessageCircle size={16} />
+                      <span>{commentCount}</span>
+                    </div>
                   </div>
 
                   <div className="item-body">

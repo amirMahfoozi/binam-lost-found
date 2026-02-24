@@ -1,22 +1,35 @@
 import React, { useEffect, useState } from "react";
 import "../../styles/ItemsList.css";
-import { loadCount, loadPage} from "../lib/api";
+import { loadCount, loadPage, API_BASE } from "../lib/api";
 import { TAG_OPTIONS } from "./AddItem";
 import { Button } from "./ui/button";
+import { Link } from "react-router-dom";
 
 export type Item = {
   id: number;
   title: string;
   description: string;
   type: "LOST" | "FOUND";
-  tagIds: string[];
-  imageUrls: string[];
+  tagIds: number[];          // ✅ should be number[] (backend returns numbers)
+  imageUrls: string[] | null; // backend sometimes returns string|null, keep safe
   createdAt?: string;
 };
 
 const PAGE_SIZE = 6;
 
-export default function ItemsList({changeView}: {changeView: (string) => void}) {
+function toAbsoluteUrl(url?: string | null) {
+  if (!url) return null;
+  if (url.startsWith("http")) return url;
+  return `${API_BASE}${url.startsWith("/") ? "" : "/"}${url}`;
+}
+
+function firstImageUrl(imageUrls?: string[] | string | null) {
+  if (!imageUrls) return null;
+  if (Array.isArray(imageUrls)) return imageUrls[0] ?? null;
+  return imageUrls;
+}
+
+export default function ItemsList({ changeView }: { changeView: (s: string) => void }) {
   const [count, setCount] = useState<number>(0);
   const [page, setPage] = useState<number>(1);
   const [items, setItems] = useState<Item[]>([]);
@@ -55,30 +68,44 @@ export default function ItemsList({changeView}: {changeView: (string) => void}) 
         <div className="message">Loading items...</div>
       ) : (
         <div className="items-grid">
-          {items.map(item => (
-            <div key={item.id} className={`item-card ${item.type === "FOUND" ? "found" : "lost"}`}>
-              <div className="item-image">
-                {item.imageUrls && item.imageUrls.length > 0 ? (
-                  <img src={item.imageUrls[0]} alt={item.title} />
-                ) : (
-                  <div className="placeholder">No image</div>
-                )}
-              </div>
-              <div className="item-body">
-                <div className="item-row">
-                  <h3 className="item-title">{item.title}</h3>
-                  <span className="item-type">{item.type}</span>
+          {items.map((item) => {
+            const imgSrc = toAbsoluteUrl(firstImageUrl(item.imageUrls as any));
+
+            return (
+              <Link to={`/items/${item.id}`} key={item.id} style={{ textDecoration: "none" }}>
+                <div className={`item-card ${item.type === "FOUND" ? "found" : "lost"}`}>
+                  <div className="item-image">
+                    {imgSrc ? (
+                      <img src={imgSrc} alt={item.title} />
+                    ) : (
+                      <div className="placeholder">No image</div>
+                    )}
+                  </div>
+
+                  <div className="item-body">
+                    <div className="item-row">
+                      <h3 className="item-title">{item.title}</h3>
+                      <span className="item-type">{item.type}</span>
+                    </div>
+
+                    <div className="item-desc">{item.description || "—"}</div>
+
+                    <div className="item-meta">
+                      <span className="meta-tags">
+                        {(item.tagIds || [])
+                          .map((id) => TAG_OPTIONS[id] ?? `tag-${id}`)
+                          .join(", ")}
+                      </span>
+                    </div>
+
+                    <div className="item-footer">
+                      <small>{item.createdAt ? new Date(item.createdAt).toLocaleString() : ""}</small>
+                    </div>
+                  </div>
                 </div>
-                <div className="item-desc">{item.description || "—"}</div>
-                <div className="item-meta">
-                  <span className="meta-tags">{item.tagIds.map(s => TAG_OPTIONS[s]).join(", ")}</span>
-                </div>
-                <div className="item-footer">
-                  <small>{item.createdAt ? new Date(item.createdAt).toLocaleString() : ""}</small>
-                </div>
-              </div>
-            </div>
-          ))}
+              </Link>
+            );
+          })}
         </div>
       )}
 
@@ -89,7 +116,8 @@ export default function ItemsList({changeView}: {changeView: (string) => void}) 
         <button onClick={() => goto(page + 1)} disabled={count !== null && page >= totalPages}>Next</button>
         <button onClick={() => goto(totalPages)} disabled={count !== null && page >= totalPages}>Last</button>
       </div>
-      <Button onClick={()=>changeView("dashboard")}>Back</Button>
+
+      <Button onClick={() => changeView("dashboard")}>Back</Button>
     </div>
   );
 }

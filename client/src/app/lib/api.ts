@@ -266,3 +266,81 @@ export async function sendChatbotMessage(message: string): Promise<ChatbotRespon
   if (!res.ok) throw new Error(await parseError(res));
   return res.json();
 }
+
+// ---------- Comments ----------
+export type CommentDto = {
+  cid: number;
+  iid: number;
+  uid: number;
+  comment_text: string;
+  report_count: number | null;
+  date_added: string;
+  user: { uid: number; username: string } | null;
+  permissions: { canDelete: boolean };
+};
+
+export async function loadComments(itemId: number): Promise<CommentDto[]> {
+  const token = localStorage.getItem("token");
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(`${API_BASE}/comments/items/${itemId}/comments`, { headers });
+  if (!res.ok) throw new Error(await parseError(res));
+  const data = await res.json();
+  return (data?.comments ?? []) as CommentDto[];
+}
+
+export async function addComment(itemId: number, body: string): Promise<void> {
+  const token = localStorage.getItem("token");
+  if (!token) throw new Error("You must be logged in to comment.");
+
+  const res = await fetch(`${API_BASE}/comments/items/${itemId}/comments`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ body }),
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+}
+
+export async function deleteComment(commentId: number): Promise<void> {
+  const token = localStorage.getItem("token");
+  if (!token) throw new Error("You must be logged in.");
+
+  const res = await fetch(`${API_BASE}/comments/${commentId}`, {
+    method: "DELETE",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+}
+
+export async function reportComment(commentId: number): Promise<{ reportCount: number }> {
+  const token = localStorage.getItem("token");
+  if (!token) throw new Error("You must be logged in to report.");
+
+  const res = await fetch(`${API_BASE}/comments/${commentId}/report`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return res.json() as Promise<{ success: boolean; reportCount: number }>;
+}
+
+export async function loadCommentsCount(itemId: number): Promise<number> {
+  const res = await fetch(`${API_BASE}/comments/items/${itemId}/comments`);
+  if (!res.ok) throw new Error(await parseError(res));
+  const data = await res.json();
+  const list = Array.isArray(data?.comments) ? data.comments : [];
+  return list.length;
+}

@@ -250,6 +250,22 @@ function makeClusterIcon(lost: number, found: number) {
   });
 }
 
+// ✅ Only recenter automatically once when location is obtained (or fallback is set)
+function RecenterOnPickOnce({
+  pickPos,
+  enabled,
+}: {
+  pickPos: [number, number];
+  enabled: boolean;
+}) {
+  const map = useMap();
+  useEffect(() => {
+    if (!enabled) return;
+    map.setView(pickPos, map.getZoom(), { animate: true });
+  }, [map, pickPos, enabled]);
+  return null;
+}
+
 export function MapModal({ open, onClose }: MapModalProps) {
   const navigate = useNavigate();
 
@@ -260,6 +276,12 @@ export function MapModal({ open, onClose }: MapModalProps) {
   const [pinsError, setPinsError] = useState<string | null>(null);
 
   const [pickPos, setPickPos] = useState<[number, number]>(FALLBACK_CENTER);
+
+  // ✅ show message if location cannot be determined
+  const [geoError, setGeoError] = useState<string | null>(null);
+
+  // ✅ recenter map only once when we set initial pickPos
+  const [shouldRecenter, setShouldRecenter] = useState(false);
 
   // search
   const [search, setSearch] = useState("");
@@ -282,8 +304,40 @@ export function MapModal({ open, onClose }: MapModalProps) {
       .catch(() => setCampusGeoJson(null));
   }, [open]);
 
+  // ✅ Set picker to user's location if possible; otherwise show error and keep fallback
   useEffect(() => {
-    if (open) setPickPos(FALLBACK_CENTER);
+    if (!open) return;
+
+    setGeoError(null);
+    setShouldRecenter(false);
+
+    // start with fallback immediately
+    setPickPos(FALLBACK_CENTER);
+    setShouldRecenter(true);
+
+    if (!navigator.geolocation) {
+      setGeoError("Unable to find your location (geolocation not supported).");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        setPickPos([lat, lng]);
+        setShouldRecenter(true);
+      },
+      (err) => {
+        // keep fallback
+        setGeoError("Unable to find your location.");
+        console.log("GEO ERROR:", err);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 8000,
+        maximumAge: 30000,
+      }
+    );
   }, [open]);
 
   // Load items/tags whenever map opens OR filters/search change
@@ -374,6 +428,7 @@ export function MapModal({ open, onClose }: MapModalProps) {
             <p className="text-sm text-gray-600">{UNI_NAME}</p>
             {loadingPins && <p className="text-xs text-gray-500">Loading pins…</p>}
             {pinsError && <p className="text-xs text-red-600">{pinsError}</p>}
+            {geoError && <p className="text-xs text-amber-600">{geoError}</p>}
           </div>
 
           <button
@@ -393,6 +448,7 @@ export function MapModal({ open, onClose }: MapModalProps) {
             />
 
             <TrackZoom onZoom={setZoom} />
+            <RecenterOnPickOnce pickPos={pickPos} enabled={shouldRecenter} />
 
             {/* boundary */}
             {campusGeoJson && (

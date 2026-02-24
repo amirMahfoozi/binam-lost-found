@@ -65,6 +65,7 @@
     align-items: center;
     justify-content: center;
     border-bottom: 1px solid #000;
+    position: relative;
   }
   
   .item-image img {
