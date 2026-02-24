@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
 import "../../styles/ItemShow.css";
 import { deleteItem, showItem, API_BASE } from "../lib/api";
-import { Link } from "react-router-dom";
-
+import { Link, Route, useNavigate } from "react-router-dom";
+<Route path='/items/:id/edit' element={<EditItem />} />
 // ✅ add these imports (make sure you added these functions/types in api.ts)
 import { addComment, deleteComment, loadComments, reportComment, CommentDto } from "../lib/api";
+import EditItem from "./EditItem";
 
 function toAbsoluteUrl(url?: string) {
   if (!url) return "";
@@ -58,7 +59,7 @@ export default function ItemShow({ id, onEdit, onDelete }: Props) {
   const [item, setItem] = useState<ItemResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
+  const navigate = useNavigate();
   const [deleting, setDeleting] = useState(false);
   const [showFullImage, setShowFullImage] = useState(false);
 
@@ -301,10 +302,7 @@ export default function ItemShow({ id, onEdit, onDelete }: Props) {
             </Link>
 
             {item.permissions.canEdit && (
-              <button
-                className="button"
-                onClick={() => (onEdit ? onEdit(item.iid) : alert("Edit not implemented"))}
-              >
+              <button className='button' onClick={() => navigate(`/items/${item.iid}/edit`)}>
                 Edit
               </button>
             )}

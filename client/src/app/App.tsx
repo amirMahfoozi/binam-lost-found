@@ -20,6 +20,7 @@ import AddItem from "./pages/AddItem";
 import ItemsList from "./pages/ItemsList";
 import Dashboard from "./pages/Dashboard";
 import ItemShow from "./pages/ItemShow";
+import EditItem from "./pages/EditItem";
 
 export type AppUser = {
   uid: number | string;
@@ -175,6 +176,7 @@ return (
         <Route path="/items" element={userExists() ? <ItemsList /> : <Navigate to="/login" replace />} />
         <Route path="/add-item" element={userExists() ? <AddItem /> : <Navigate to="/login" replace />} />
         <Route path="/items/:id" element={userExists() ? <ItemShowWrapper /> : <Navigate to="/login" replace />} />
+        <Route path='/items/:id/edit' element={<EditItem />} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

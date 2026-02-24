@@ -344,3 +344,51 @@ export async function loadCommentsCount(itemId: number): Promise<number> {
   const list = Array.isArray(data?.comments) ? data.comments : [];
   return list.length;
 }
+// src/lib/api.ts
+function getToken() {
+  return localStorage.getItem('token');
+}
+
+function authHeaders() {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+export async function loadItemForEdit(id: number) {
+  const res = await fetch(`${API_BASE}/items/${id}`, {
+    headers: {
+      ...authHeaders(),
+    },
+  });
+
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j?.error || `Failed to load item (${res.status})`);
+  return j;
+}
+
+export async function updateItem(
+  id: number,
+  payload: {
+    title?: string;
+    description?: string;
+    type?: 'lost' | 'found';
+    latitude?: number;
+    longitude?: number;
+    tagIds?: number[];
+    addImageUrls?: string[];
+    removeImageIds?: number[];
+  }
+) {
+  const res = await fetch(`${API_BASE}/items/${id}`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j?.error || `Failed to update item (${res.status})`);
+  return j;
+}
+
