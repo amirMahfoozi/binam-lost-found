@@ -116,6 +116,44 @@ export async function loadCount(
   }
 }
 
+export async function loadCountWithFilters(params?: Record<string, string | number | undefined>) {
+  // Calls /items with page=1&limit=1 but returns total count from headers or from response if backend includes it.
+  // Since backend currently returns only items + pagination, we'll request a large limit and use returned length OR
+  // better: use the existing /items and count via a separate endpoint if available. As a pragmatic approach,
+  // request limit=1 and rely on a custom header "X-Total-Count" if backend sets it; otherwise fall back to
+  // a request with limit=1000 to estimate count. Adjust according to your backend capabilities.
+  const qs =
+    params
+      ? "?" +
+        Object.entries({ ...params })
+          .filter(([, v]) => v !== undefined && v !== "")
+          .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+          .join("&")
+      : "";
+
+  const url = `${API_BASE}/items${qs}${qs ? "&" : "?"}page=1&limit=1`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(await parseError(res));
+
+  // Try to read total from header first
+  const totalFromHeader = res.headers.get("X-Total-Count");
+  if (totalFromHeader) {
+    return Number(totalFromHeader);
+  }
+
+  // Otherwise, fall back: ask with a large limit (server caps at 100)
+  const fallbackRes = await fetch(`${API_BASE}/items${qs}${qs ? "&" : "?"}page=1&limit=100`);
+  if (!fallbackRes.ok) throw new Error(await parseError(fallbackRes));
+  const json = await fallbackRes.json();
+  if (json && Array.isArray(json.items) && json.pagination && json.pagination.limit) {
+    // If backend provides pagination info with page and limit but not total, we cannot know exact total.
+    // Return items length as best-effort.
+    return Array.isArray(json.items) ? json.items.length : 0;
+  }
+  return Array.isArray(json.items) ? json.items.length : 0;
+}
+
+
 // Generic loader (works for list + map + filters)
 export async function loadItems(params?: Record<string, string | number | undefined>) {
   const qs =

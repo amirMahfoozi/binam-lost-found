@@ -1,6 +1,13 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import "../../styles/ItemsList.css";
-import { loadCount, loadPage, loadTags, TagDto, API_BASE, loadCommentsCount } from "../lib/api";
+import {
+  loadCountWithFilters,
+  loadItems,
+  loadTags,
+  TagDto,
+  API_BASE,
+  loadCommentsCount,
+} from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Link } from "react-router-dom";
 import { MessageCircle } from "lucide-react";
@@ -11,7 +18,7 @@ export type Item = {
   description: string;
   type: string; // backend sends "lost" | "found"
   tagIds: number[];
-  imageUrls: string | null; // backend returns a single url (despite the name)
+  imageUrls: string | null;
   createdAt?: string;
 };
 
@@ -22,6 +29,7 @@ function toAbsoluteUrl(url?: string | null) {
 }
 
 const PAGE_SIZE = 6;
+const DEBOUNCE_MS = 300;
 
 export default function ItemsList() {
   const [count, setCount] = useState<number>(0);
@@ -31,33 +39,94 @@ export default function ItemsList() {
   const [error, setError] = useState<string | null>(null);
 
   const [tagById, setTagById] = useState<Record<number, TagDto>>({});
+  const [allTags, setAllTags] = useState<TagDto[]>([]);
 
-  // ✅ comment counts: { [itemId]: number }
   const [commentCountByItemId, setCommentCountByItemId] = useState<Record<number, number>>({});
+
+  // Filters
+  const [searchText, setSearchText] = useState<string>("");
+  const [debouncedSearch, setDebouncedSearch] = useState<string>("");
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  const [tagMode, setTagMode] = useState<"any" | "all">("any");
 
   const totalPages = count ? Math.max(1, Math.ceil(count / PAGE_SIZE)) : 1;
 
+  // debounce search
+  const debounceTimer = useRef<number | null>(null);
   useEffect(() => {
-    loadCount(setCount, setError);
-  }, []);
+    if (debounceTimer.current) {
+      window.clearTimeout(debounceTimer.current);
+    }
+    // @ts-ignore
+    debounceTimer.current = window.setTimeout(() => {
+      setDebouncedSearch(searchText.trim());
+    }, DEBOUNCE_MS);
 
-  useEffect(() => {
-    loadPage(page, PAGE_SIZE, setLoading, setError, setItems);
-  }, [page]);
+    return () => {
+      if (debounceTimer.current) window.clearTimeout(debounceTimer.current);
+    };
+  }, [searchText]);
 
+  // load tags once
   useEffect(() => {
     loadTags()
       .then((tags) => {
         const map: Record<number, TagDto> = {};
         tags.forEach((t) => (map[t.tid] = t));
         setTagById(map);
+        setAllTags(tags);
       })
       .catch(() => {});
   }, []);
 
-  // ✅ load comment counts for visible page items
+  // helper to build params
+  const buildParams = (p: number) => {
+    return {
+      page: p,
+      limit: PAGE_SIZE,
+      searchText: debouncedSearch || undefined,
+      tagIds: selectedTagIds.length ? selectedTagIds.join(",") : undefined,
+      tagMode: selectedTagIds.length ? tagMode : undefined,
+    } as Record<string, string | number | undefined>;
+  };
+
+  // load count when filters change
   useEffect(() => {
-    if (!items.length) return;
+    setError(null);
+    const params = {
+      searchText: debouncedSearch || undefined,
+      tagIds: selectedTagIds.length ? selectedTagIds.join(",") : undefined,
+      tagMode: selectedTagIds.length ? tagMode : undefined,
+    };
+    loadCountWithFilters(params)
+      .then((n) => setCount(Number.isFinite(n) ? n : 0))
+      .catch((e: any) => setError(e?.message || "Failed to load count"));
+  }, [debouncedSearch, selectedTagIds, tagMode]);
+
+  // load page items whenever page or filters change
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    const params = buildParams(page);
+    loadItems(params)
+      .then((res) => {
+        setItems(Array.isArray(res.items) ? (res.items as any) : []);
+      })
+      .catch((e: any) => setError(e?.message || "Failed to load items"))
+      .finally(() => setLoading(false));
+  }, [page, debouncedSearch, selectedTagIds, tagMode]);
+
+  // reset to page 1 when filters change
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, selectedTagIds, tagMode]);
+
+  // load comment counts for visible page items
+  useEffect(() => {
+    if (!items.length) {
+      setCommentCountByItemId({});
+      return;
+    }
 
     let cancelled = false;
 
@@ -103,6 +172,10 @@ export default function ItemsList() {
     return t;
   }
 
+  function toggleTag(tid: number) {
+    setSelectedTagIds((prev) => (prev.includes(tid) ? prev.filter((x) => x !== tid) : [...prev, tid]));
+  }
+
   return (
     <div className="items-root">
       <div className="items-header">
@@ -114,8 +187,64 @@ export default function ItemsList() {
 
       {error && <div className="message">{error}</div>}
 
+      {/* Filters */}
+      <div className="filters-panel">
+        <div className="filter-row">
+          <input
+            type="text"
+            placeholder="Search title or description..."
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            className="search-input"
+          />
+        </div>
+
+        <div className="filter-row tags-row">
+          <div className="tags-label"><strong>Tags:</strong></div>
+          <div className="tags-list">
+            {allTags.map((t) => {
+              const active = selectedTagIds.includes(t.tid);
+              return (
+                <button
+                  key={t.tid}
+                  type="button"
+                  className={`tag-pill ${active ? "active" : ""}`}
+                  onClick={() => toggleTag(t.tid)}
+                  title={t.tagname}
+                  style={{ borderColor: t.color || undefined }}
+                >
+                  {t.tagname}
+                </button>
+              );
+            })}
+            {allTags.length === 0 && <div>No tags</div>}
+          </div>
+
+          <div className="tag-mode">
+            <label>
+              <input
+                type="radio"
+                checked={tagMode === "any"}
+                onChange={() => setTagMode("any")}
+              />{" "}
+              Any
+            </label>
+            <label style={{ marginLeft: 8 }}>
+              <input
+                type="radio"
+                checked={tagMode === "all"}
+                onChange={() => setTagMode("all")}
+              />{" "}
+              All
+            </label>
+          </div>
+        </div>
+      </div>
+
       {loading ? (
         <div className="message">Loading items...</div>
+      ) : items.length === 0 ? (
+        <div className="message">No items found</div>
       ) : (
         <div className="items-grid">
           {items.map((item) => {
@@ -129,7 +258,6 @@ export default function ItemsList() {
                   <div className="item-image">
                     {imgSrc ? <img src={imgSrc} alt={item.title} /> : <div className="placeholder">No image</div>}
 
-                    {/* ✅ Instagram-like comment badge */}
                     <div
                       style={{
                         position: "absolute",
