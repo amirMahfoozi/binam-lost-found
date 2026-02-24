@@ -1,7 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { MessageCircle, X, Send } from "lucide-react";
-import { API_BASE, ChatbotResponse, ChatbotSuggestion, sendChatbotMessage } from "../lib/api";
+import {
+  API_BASE,
+  ChatbotResponse,
+  ChatbotSuggestion,
+  sendChatbotMessage,
+  loadItems,
+} from "../lib/api";
 
 type ChatMessage = {
   id: string;
@@ -12,6 +18,41 @@ type ChatMessage = {
 
 function uid() {
   return Math.random().toString(36).slice(2);
+}
+
+function intersectById<T extends { id: number }>(lists: T[][]): T[] {
+  if (lists.length === 0) return [];
+  if (lists.length === 1) return lists[0];
+
+  const needed = lists.length;
+  const counts = new Map<number, { item: T; hits: number }>();
+
+  for (const list of lists) {
+    for (const it of list) {
+      const prev = counts.get(it.id);
+      if (!prev) counts.set(it.id, { item: it, hits: 1 });
+      else counts.set(it.id, { item: prev.item, hits: prev.hits + 1 });
+    }
+  }
+
+  return [...counts.values()]
+    .filter((x) => x.hits === needed)
+    .map((x) => x.item);
+}
+
+function itemToSuggestion(item: any): ChatbotSuggestion {
+  const imageUrl =
+    item?.imageUrls ?? item?.imageUrl ?? item?.images?.[0]?.image_url ?? null;
+
+  return {
+    id: Number(item.id),
+    title: String(item.title ?? ""),
+    type: String(item.type ?? ""),
+    imageUrl: imageUrl ? String(imageUrl) : null,
+    descriptionSnippet: String(item.description ?? "").slice(0, 120),
+    score: 1, // not used now; required by type
+    link: `/items/${item.id}`,
+  };
 }
 
 export function ChatbotWidget() {
@@ -55,13 +96,47 @@ export function ChatbotWidget() {
 
     try {
       const res: ChatbotResponse = await sendChatbotMessage(text);
+
+      const keywords = Array.isArray(res.keywords) ? res.keywords : [];
+
+      if (keywords.length === 0) {
+        setMessages((m) => [
+          ...m,
+          {
+            id: uid(),
+            from: "bot",
+            text: res.reply,
+            suggestions: res.suggestions ?? [],
+          },
+        ]);
+        return;
+      }
+
+      const trimmedKeywords = keywords
+        .map((k) => String(k).trim())
+        .filter((k) => k.length > 0)
+        .slice(0, 5);
+
+      const lists = await Promise.all(
+        trimmedKeywords.map(async (kw) => {
+          const data = await loadItems({ searchText: kw });
+          return data.items ?? [];
+        })
+      );
+
+      const intersected = intersectById(lists);
+
+      const suggestions: ChatbotSuggestion[] = intersected
+        .slice(0, 6)
+        .map(itemToSuggestion);
+
       setMessages((m) => [
         ...m,
         {
           id: uid(),
           from: "bot",
           text: res.reply,
-          suggestions: res.suggestions ?? [],
+          suggestions,
         },
       ]);
     } catch (e: any) {
