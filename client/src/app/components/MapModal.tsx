@@ -21,8 +21,6 @@ type MapModalProps = {
   onClose: () => void;
 };
 
-// IMPORTANT: This assumes /items returns lat/lng + tagIds.
-// If your /items does NOT include latitude/longitude, you MUST switch to /items/map-items.
 type MapItem = {
   id: number;
   title: string;
@@ -38,6 +36,11 @@ type MapItem = {
 const UNI_NAME = "دانشگاه صنعتی شریف";
 const FALLBACK_CENTER: [number, number] = [35.7036, 51.3517];
 
+// Switch between grid summary vs individual pins
+const GRID_MODE_ZOOM = 16; // zoom < 16 => grid, zoom >= 16 => individual pins
+const GRID_ROWS = 2;
+const GRID_COLS = 2;
+
 function toAbsoluteUrl(url?: string | null) {
   if (!url) return null;
   if (url.startsWith("http")) return url;
@@ -47,10 +50,9 @@ function toAbsoluteUrl(url?: string | null) {
 function firstImageUrl(imageUrls?: string[] | string | null) {
   if (!imageUrls) return null;
   if (Array.isArray(imageUrls)) return imageUrls[0] ?? null;
-  return imageUrls; // in case server returns a single string
+  return imageUrls;
 }
 
-// --- Colored marker icons (DivIcon with SVG) ---
 function makePinIcon(color: string) {
   const svg = `
     <svg width="28" height="28" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -91,7 +93,21 @@ function FitToGeoJson({ data }: { data: any }) {
   return null;
 }
 
-// Optional: long press to add item at position
+// Track map zoom to switch between grid and detailed pins
+function TrackZoom({ onZoom }: { onZoom: (z: number) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    const handler = () => onZoom(map.getZoom());
+    handler();
+    map.on("zoomend", handler);
+    return () => {
+      map.off("zoomend", handler);
+    };
+  }, [map, onZoom]);
+  return null;
+}
+
+// Optional: long press to add item
 function HoldToAddItem({
   onHold,
   holdMs = 5000,
@@ -156,6 +172,84 @@ function HoldToAddItem({
   return null;
 }
 
+type GridCell = {
+  key: string;
+  centerLat: number;
+  centerLng: number;
+  lost: number;
+  found: number;
+};
+
+function buildGrid(
+  items: Array<{ lat: number; lng: number; type: string }>,
+  bounds: L.LatLngBounds,
+  rows = 2,
+  cols = 2
+) {
+  const sw = bounds.getSouthWest();
+  const ne = bounds.getNorthEast();
+
+  const latStep = (ne.lat - sw.lat) / rows;
+  const lngStep = (ne.lng - sw.lng) / cols;
+
+  const cells = new Map<string, GridCell>();
+
+  for (const it of items) {
+    const r = Math.min(rows - 1, Math.max(0, Math.floor((it.lat - sw.lat) / latStep)));
+    const c = Math.min(cols - 1, Math.max(0, Math.floor((it.lng - sw.lng) / lngStep)));
+
+    const key = `${r}-${c}`;
+    if (!cells.has(key)) {
+      const centerLat = sw.lat + (r + 0.5) * latStep;
+      const centerLng = sw.lng + (c + 0.5) * lngStep;
+      cells.set(key, { key, centerLat, centerLng, lost: 0, found: 0 });
+    }
+
+    const cell = cells.get(key)!;
+    const t = normalizeType(it.type);
+    if (t === "found") cell.found += 1;
+    else cell.lost += 1;
+  }
+
+  return Array.from(cells.values());
+}
+
+function makeClusterIcon(lost: number, found: number) {
+  const total = lost + found;
+
+  const html = `
+    <div style="
+      width: 44px;
+      height: 44px;
+      border-radius: 9999px;
+      background: white;
+      border: 2px solid #2563eb;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.15);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      line-height: 1;
+      font-weight: 700;
+    ">
+      <div>${total}</div>
+      <div style="font-size: 10px; font-weight: 600; margin-top: 2px;">
+        <span style="color:#ef4444">${lost}</span> /
+        <span style="color:#22c55e">${found}</span>
+      </div>
+    </div>
+  `;
+
+  return L.divIcon({
+    html,
+    className: "",
+    iconSize: [44, 44],
+    iconAnchor: [22, 22],
+    popupAnchor: [0, -18],
+  });
+}
+
 export function MapModal({ open, onClose }: MapModalProps) {
   const navigate = useNavigate();
 
@@ -165,14 +259,19 @@ export function MapModal({ open, onClose }: MapModalProps) {
   const [loadingPins, setLoadingPins] = useState(false);
   const [pinsError, setPinsError] = useState<string | null>(null);
 
-  // picker pin
   const [pickPos, setPickPos] = useState<[number, number]>(FALLBACK_CENTER);
+
+  // search
   const [search, setSearch] = useState("");
-  // tags for filter UI
+
+  // tags
   const [tags, setTags] = useState<TagDto[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
   const [appliedTagIds, setAppliedTagIds] = useState<number[]>([]);
+
+  // zoom tracking
+  const [zoom, setZoom] = useState(16);
 
   useEffect(() => {
     if (!open) return;
@@ -187,6 +286,7 @@ export function MapModal({ open, onClose }: MapModalProps) {
     if (open) setPickPos(FALLBACK_CENTER);
   }, [open]);
 
+  // Load items/tags whenever map opens OR filters/search change
   useEffect(() => {
     if (!open) return;
 
@@ -199,8 +299,7 @@ export function MapModal({ open, onClose }: MapModalProps) {
         limit: 500,
         searchText: search.trim() || undefined,
         tagIds: appliedTagIds.length ? appliedTagIds.join(",") : undefined,
-        tagMode: "any", // or "all"
-        // type: "lost" or "found" if you later add a type filter
+        tagMode: "any",
       }),
       loadTags(),
     ])
@@ -210,34 +309,57 @@ export function MapModal({ open, onClose }: MapModalProps) {
       })
       .catch((e: any) => setPinsError(e?.message || "Failed to load map items"))
       .finally(() => setLoadingPins(false));
-  }, [open]);
+  }, [open, search, appliedTagIds]);
 
   const boundaryStyle = useMemo(
     () => ({ color: "red", weight: 3, fillColor: "red", fillOpacity: 0.12 }),
     []
   );
 
-  // ✅ filter items by applied tags (OR logic: matches any selected tag)
+  const campusBounds = useMemo(() => {
+    if (!campusGeoJson) return null;
+    const layer = L.geoJSON(campusGeoJson);
+    const b = layer.getBounds();
+    return b.isValid() ? b : null;
+  }, [campusGeoJson]);
+
+  // local filtering (keeps UI responsive even if backend is used)
   const filteredItems = useMemo(() => {
     const q = search.trim().toLowerCase();
-  
+
     return items.filter((it) => {
-      // 1) tag filter (OR)
       const passTag =
         appliedTagIds.length === 0 ||
         (Array.isArray(it.tagIds) && it.tagIds.some((tid) => appliedTagIds.includes(tid)));
-  
+
       if (!passTag) return false;
-  
-      // 2) search filter (title/description)
       if (!q) return true;
-  
+
       const title = (it.title ?? "").toLowerCase();
       const desc = (it.description ?? "").toLowerCase();
       return title.includes(q) || desc.includes(q);
     });
   }, [items, appliedTagIds, search]);
-  
+
+  const normalizedPins = useMemo(() => {
+    return filteredItems
+      .map((it) => ({
+        ...it,
+        lat: Number(it.latitude),
+        lng: Number(it.longitude),
+      }))
+      .filter((it) => Number.isFinite(it.lat) && Number.isFinite(it.lng));
+  }, [filteredItems]);
+
+  const gridCells = useMemo(() => {
+    if (!campusBounds) return [];
+    return buildGrid(
+      normalizedPins.map((p) => ({ lat: p.lat, lng: p.lng, type: p.type })),
+      campusBounds,
+      GRID_ROWS,
+      GRID_COLS
+    );
+  }, [normalizedPins, campusBounds]);
 
   if (!open) return null;
 
@@ -270,6 +392,8 @@ export function MapModal({ open, onClose }: MapModalProps) {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
 
+            <TrackZoom onZoom={setZoom} />
+
             {/* boundary */}
             {campusGeoJson && (
               <>
@@ -277,32 +401,6 @@ export function MapModal({ open, onClose }: MapModalProps) {
                 <FitToGeoJson data={campusGeoJson} />
               </>
             )}
-            {/* Search bar */}
-<div className="absolute left-4 top-30 z-[1200] w-[260px]">
-  <div className="relative">
-    <input
-      value={search}
-      onChange={(e) => setSearch(e.target.value)}
-      placeholder="Search title or description…"
-      className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 pr-9 text-sm shadow focus:outline-none focus:ring-2 focus:ring-blue-500"
-    />
-    {search && (
-      <button
-        type="button"
-        onClick={() => setSearch("")}
-        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800"
-        aria-label="Clear search"
-      >
-        ×
-      </button>
-    )}
-  </div>
-
-  {/* optional: result count */}
-  <div className="mt-1 text-xs text-gray-600 bg-white/80 inline-block rounded px-2 py-1 shadow">
-    Showing {filteredItems.length} item(s)
-  </div>
-</div>
 
             {/* picker pin */}
             <Marker
@@ -337,15 +435,30 @@ export function MapModal({ open, onClose }: MapModalProps) {
               }}
             />
 
-            {/* pins */}
-            {filteredItems
-              .map((it) => ({
-                ...it,
-                lat: Number(it.latitude),
-                lng: Number(it.longitude),
-              }))
-              .filter((it) => Number.isFinite(it.lat) && Number.isFinite(it.lng))
-              .map((it) => {
+            {/* GRID MODE (zoomed out) */}
+            {zoom < GRID_MODE_ZOOM ? (
+              gridCells.map((cell) => {
+                const icon = makeClusterIcon(cell.lost, cell.found);
+                return (
+                  <Marker key={cell.key} position={[cell.centerLat, cell.centerLng]} icon={icon}>
+                    <Popup>
+                      <div className="text-sm">
+                        <div className="font-semibold">Area summary</div>
+                        <div className="mt-1">
+                          <span className="text-red-600 font-semibold">Lost:</span> {cell.lost}
+                        </div>
+                        <div>
+                          <span className="text-green-600 font-semibold">Found:</span> {cell.found}
+                        </div>
+                        <div className="text-xs text-gray-600 mt-2">Zoom in to see individual items.</div>
+                      </div>
+                    </Popup>
+                  </Marker>
+                );
+              })
+            ) : (
+              /* DETAILED MODE (zoomed in) */
+              normalizedPins.map((it) => {
                 const t = normalizeType(it.type);
                 const icon = t === "found" ? FOUND_ICON : LOST_ICON;
 
@@ -362,7 +475,6 @@ export function MapModal({ open, onClose }: MapModalProps) {
                           {it.createdAt ? ` • ${new Date(it.createdAt).toLocaleString()}` : ""}
                         </div>
 
-                        {/* show category */}
                         <div className="mt-1 text-xs">
                           <span className="font-semibold">Category:</span>{" "}
                           {(it.tagIds || [])
@@ -371,7 +483,6 @@ export function MapModal({ open, onClose }: MapModalProps) {
                             .join(", ") || "—"}
                         </div>
 
-                        {/* show description */}
                         {it.description ? (
                           <div className="mt-1 text-xs text-gray-700 line-clamp-3">{it.description}</div>
                         ) : null}
@@ -399,11 +510,12 @@ export function MapModal({ open, onClose }: MapModalProps) {
                     </Popup>
                   </Marker>
                 );
-              })}
+              })
+            )}
           </MapContainer>
 
           {/* Filter button */}
-          <div className="absolute left-4 top-20 z-[1000]">
+          <div className="absolute left-4 top-20 z-[1200]">
             <button
               className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow hover:bg-blue-700"
               onClick={() => setFilterOpen((s) => !s)}
@@ -413,9 +525,35 @@ export function MapModal({ open, onClose }: MapModalProps) {
             </button>
           </div>
 
+          {/* Search bar */}
+          <div className="absolute left-4 top-32 z-[1200] w-[260px]">
+            <div className="relative">
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search title or description…"
+                className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 pr-9 text-sm shadow focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              {search && (
+                <button
+                  type="button"
+                  onClick={() => setSearch("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800"
+                  aria-label="Clear search"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+
+            <div className="mt-1 text-xs text-gray-600 bg-white/80 inline-block rounded px-2 py-1 shadow">
+              Showing {filteredItems.length} item(s)
+            </div>
+          </div>
+
           {/* Filter panel */}
           {filterOpen && (
-            <div className="absolute right-4 top-32 z-[1200] w-60 rounded-xl bg-white p-3 shadow">
+            <div className="absolute right-4 top-20 z-[1200] w-60 rounded-xl bg-white p-3 shadow">
               <div className="text-sm font-semibold mb-2">Tags</div>
 
               <div className="space-y-2 max-h-56 overflow-auto">
@@ -428,9 +566,7 @@ export function MapModal({ open, onClose }: MapModalProps) {
                         checked={checked}
                         onChange={() => {
                           setSelectedTagIds((prev) =>
-                            prev.includes(t.tid)
-                              ? prev.filter((x) => x !== t.tid)
-                              : [...prev, t.tid]
+                            prev.includes(t.tid) ? prev.filter((x) => x !== t.tid) : [...prev, t.tid]
                           );
                         }}
                       />
@@ -470,7 +606,7 @@ export function MapModal({ open, onClose }: MapModalProps) {
           )}
 
           {/* Add item button */}
-          <div className="absolute bottom-4 right-4 z-[999]">
+          <div className="absolute bottom-4 right-4 z-[1200]">
             <button
               className="rounded-xl bg-blue-600 px-4 py-3 text-white shadow-lg hover:bg-blue-700"
               onClick={() => {
@@ -484,7 +620,7 @@ export function MapModal({ open, onClose }: MapModalProps) {
           </div>
 
           {/* Legend */}
-          <div className="absolute right-4 top-4 z-[998] rounded-lg bg-white/90 p-3 text-xs shadow space-y-2">
+          <div className="absolute right-4 top-4 z-[1190] rounded-lg bg-white/90 p-3 text-xs shadow space-y-2">
             <div className="font-semibold text-gray-800">Legend</div>
             <div className="flex items-center gap-2">
               <span className="inline-block h-3 w-3 rounded-full bg-red-500" />
@@ -493,6 +629,10 @@ export function MapModal({ open, onClose }: MapModalProps) {
             <div className="flex items-center gap-2">
               <span className="inline-block h-3 w-3 rounded-full bg-green-500" />
               <span>Found</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="inline-block h-3 w-3 rounded-full border-2 border-blue-600 bg-white" />
+              <span>Grid summary (zoom out)</span>
             </div>
           </div>
         </div>
