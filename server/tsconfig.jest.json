@@ -1,0 +1,16 @@
+{
+    "extends": "./tsconfig.node.json",
+    "compilerOptions": {
+      "module": "ESNext",
+      "moduleResolution": "Bundler",
+      "target": "ES2022",
+      "esModuleInterop": true,
+      "allowSyntheticDefaultImports": true,
+      "types": ["jest", "node"],
+  
+      "verbatimModuleSyntax": false,
+      "noUnusedParameters": false,
+      "noUnusedLocals": false
+    },
+    "include": ["src/**/*.ts"]
+  }

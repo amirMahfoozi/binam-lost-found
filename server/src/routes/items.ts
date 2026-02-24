@@ -405,8 +405,8 @@ router.get("/:id", optionalAuth, async (req: AuthRequest, res, next) => {
     }
 
     const permissions = {
-      canEdit: req.user?.userId === item.uid,
-      canDelete: req.user?.userId === item.uid,
+      canEdit: Number(req.user?.userId) === item.uid,
+      canDelete: Number(req.user?.userId) === item.uid,
     };
 
     res.json({

@@ -177,6 +177,7 @@ router.post("/verify-otp", async (req, res, next) => {
         password: otpRecord.pending_password,
       },
     });
+    
 
     // consume OTP row so it can't be reused
     await prisma.otps.delete({
