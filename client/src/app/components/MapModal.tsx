@@ -38,8 +38,8 @@ const FALLBACK_CENTER: [number, number] = [35.7036, 51.3517];
 
 // Switch between grid summary vs individual pins
 const GRID_MODE_ZOOM = 16; // zoom < 16 => grid, zoom >= 16 => individual pins
-const GRID_ROWS = 2;
-const GRID_COLS = 2;
+const GRID_ROWS = 4;
+const GRID_COLS = 4;
 
 function toAbsoluteUrl(url?: string | null) {
   if (!url) return null;

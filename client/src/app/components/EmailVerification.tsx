@@ -1,10 +1,9 @@
-// EmailVerification.tsx
-import React, { useState } from "react";
-import { Button } from "./ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "./ui/card";
-import { Input } from "./ui/input";
-import { Mail, CheckCircle, MailCheck } from "lucide-react";
-import { register, verifyOtp } from "../lib/api";
+import React, { useState } from 'react';
+import { Button } from './ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
+import { Input } from './ui/input';
+import { Mail, CheckCircle, MailCheck } from 'lucide-react';
+import { register, verifyOtp } from '../lib/api';
 
 interface EmailVerificationProps {
   email: string;
@@ -21,7 +20,7 @@ export function EmailVerification({
   onVerificationComplete,
   onBackToRegister,
 }: EmailVerificationProps) {
-  const [otp, setOtp] = useState("");
+  const [otp, setOtp] = useState('');
   const [isResending, setIsResending] = useState(false);
   const [resendSuccess, setResendSuccess] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -32,12 +31,11 @@ export function EmailVerification({
     setResendSuccess(false);
     setError(null);
     try {
-      // Your backend's "resend" is just calling /auth/register again
       await register(email, username, password);
       setResendSuccess(true);
       setTimeout(() => setResendSuccess(false), 3000);
     } catch (err: any) {
-      setError(err?.message || "Failed to resend OTP");
+      setError(err?.message || 'Failed to resend OTP');
     } finally {
       setIsResending(false);
     }
@@ -50,70 +48,97 @@ export function EmailVerification({
       const data = await verifyOtp(email, otp);
       onVerificationComplete(data.token, data.user);
     } catch (err: any) {
-      setError(err?.message || "OTP verification failed");
+      setError(err?.message || 'OTP verification failed');
     } finally {
       setIsVerifying(false);
     }
   };
 
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader className="text-center">
-        <div className="mx-auto mb-4 w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
-          <MailCheck className="size-8 text-blue-600" />
-        </div>
-        <CardTitle>Verify Your University Email</CardTitle>
-        <CardDescription>Enter the OTP code for</CardDescription>
-        <p className="text-sm mt-1">{email}</p>
-      </CardHeader>
+    <div className='w-full max-w-md'>
+      {/* Card made more opaque + higher contrast for photo backgrounds */}
+      <Card className='rounded-2xl bg-white/95 border border-slate-200 shadow-2xl'>
+        <CardHeader className='text-center space-y-2'>
+          <div className='mx-auto mb-2 w-16 h-16 bg-slate-900/5 rounded-full flex items-center justify-center'>
+            <MailCheck className='size-8 text-slate-900' />
+          </div>
 
-      <CardContent className="space-y-6">
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-2">
-          <div className="flex items-start gap-3">
-            <Mail className="size-5 text-blue-600 mt-0.5" />
-            <div className="space-y-1">
-              <p className="text-sm">Enter OTP to activate your account</p>
-              <p className="text-xs text-gray-600">
-                If EMAIL_MODE=log, the OTP is printed in your backend terminal.
-              </p>
+          <CardTitle className='text-2xl text-slate-900'>Verify Your University Email</CardTitle>
+          <CardDescription className='text-slate-600'>Enter the OTP code for</CardDescription>
+          <p className='text-sm font-semibold text-slate-900 mt-1 break-all'>{email}</p>
+        </CardHeader>
+
+        <CardContent className='space-y-6'>
+          {/* Info box with stronger contrast */}
+          <div className='bg-white border border-slate-200 rounded-xl p-4'>
+            <div className='flex items-start gap-3'>
+              <Mail className='size-5 text-slate-900 mt-0.5' />
+              <div className='space-y-1'>
+                <p className='text-sm font-semibold text-slate-900'>Enter OTP to activate your account</p>
+                <p className='text-xs text-slate-600'>
+                  If <span className='font-semibold'>EMAIL_MODE=log</span>, the OTP is printed in your backend terminal.
+                </p>
+              </div>
             </div>
           </div>
-        </div>
 
-        <Input
-          value={otp}
-          onChange={(e) => setOtp(e.target.value)}
-          placeholder="6-digit OTP"
-          inputMode="numeric"
-        />
+          {/* OTP input - stronger border & focus */}
+          <Input
+            value={otp}
+            onChange={(e) => setOtp(e.target.value)}
+            placeholder='6-digit OTP'
+            inputMode='numeric'
+            className='h-11 text-base border-slate-300 focus-visible:ring-slate-900'
+          />
 
-        {resendSuccess && (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-            <div className="flex items-center gap-3">
-              <CheckCircle className="size-5 text-green-600" />
-              <p className="text-sm text-green-800">OTP sent successfully!</p>
+          {resendSuccess && (
+            <div className='bg-emerald-50 border border-emerald-200 rounded-xl p-4'>
+              <div className='flex items-center gap-3'>
+                <CheckCircle className='size-5 text-emerald-600' />
+                <p className='text-sm font-semibold text-emerald-800'>OTP sent successfully!</p>
+              </div>
+            </div>
+          )}
+
+          {error && (
+            <div className='rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700'>
+              {error}
+            </div>
+          )}
+
+          <div className='space-y-3'>
+            {/* Navy primary button */}
+            <Button
+              onClick={handleVerify}
+              className='w-full h-11 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold'
+              disabled={isVerifying || otp.trim().length < 6}
+            >
+              {isVerifying ? 'Verifying...' : 'Verify & Continue'}
+            </Button>
+
+            {/* High-contrast outline button */}
+            <Button
+              onClick={handleResendEmail}
+              variant='outline'
+              className='w-full h-11 rounded-xl border-slate-300 text-slate-900 font-bold hover:bg-slate-50'
+              disabled={isResending}
+            >
+              {isResending ? 'Sending...' : 'Resend OTP'}
+            </Button>
+
+            {/* Make it visible over busy backgrounds */}
+            <div className='flex justify-center pt-1'>
+              <button
+                type='button'
+                onClick={onBackToRegister}
+                className='text-sm font-semibold text-slate-900 underline underline-offset-4 hover:text-slate-700'
+              >
+                Use a different email
+              </button>
             </div>
           </div>
-        )}
-
-        {error && <p className="text-sm text-red-500">{error}</p>}
-
-        <div className="space-y-3">
-          <Button onClick={handleVerify} className="w-full" disabled={isVerifying || otp.trim().length < 6}>
-            {isVerifying ? "Verifying..." : "Verify & Continue"}
-          </Button>
-
-          <Button onClick={handleResendEmail} variant="outline" className="w-full" disabled={isResending}>
-            {isResending ? "Sending..." : "Resend OTP"}
-          </Button>
-
-          <div className="text-center">
-            <button type="button" onClick={onBackToRegister} className="text-sm text-blue-600 hover:underline">
-              Use a different email
-            </button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
