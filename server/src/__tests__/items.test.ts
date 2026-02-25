@@ -10,7 +10,7 @@ jest.unstable_mockModule('../middleware/auth', () => ({
   requireAuth: (req: any, res: any, next: any) => {
     const id = req.header('x-user-id');
     if (!id) return res.status(401).json({ error: 'Unauthorized' });
-    req.user = { userId: id };
+    req.user = { userId: Number(id) };
     next();
   },
   optionalAuth: (req: any, _res: any, next: any) => {
@@ -99,7 +99,7 @@ jest.unstable_mockModule('../db', () => {
     // AND blocks (used for search + tagMode=all)
     if (Array.isArray(where?.AND)) {
       for (const clause of where.AND) {
-        // searchText clause: { OR: [ { title: { contains } }, { description: { contains } } ] }
+        // searchText clause
         if (Array.isArray(clause?.OR)) {
           const needleTitle = clause.OR?.[0]?.title?.contains?.toLowerCase?.() ?? null;
           const needleDesc = clause.OR?.[1]?.description?.contains?.toLowerCase?.() ?? null;
@@ -111,7 +111,7 @@ jest.unstable_mockModule('../db', () => {
           });
         }
 
-        // tagMode=all clauses: { item_tags: { some: { tid } } }
+        // tagMode=all clauses
         if (clause?.item_tags?.some?.tid) {
           const tid = clause.item_tags.some.tid;
           out = out.filter((x) => getItemTagIds(x.iid).includes(tid));
@@ -119,7 +119,7 @@ jest.unstable_mockModule('../db', () => {
       }
     }
 
-    // tagMode=any clause: where.item_tags = { some: { tid: { in: [] } } }
+    // tagMode=any clause
     if (where?.item_tags?.some?.tid?.in) {
       const wanted: number[] = where.item_tags.some.tid.in;
       out = out.filter((x) => getItemTagIds(x.iid).some((tid) => wanted.includes(tid)));
@@ -136,7 +136,6 @@ jest.unstable_mockModule('../db', () => {
         const tids: number[] = where?.tid?.in ?? [];
         const found = tags.filter((t) => tids.includes(t.tid));
         if (!select) return found;
-        // only tid selected in items.ts checks
         return found.map((t) => ({ tid: t.tid }));
       },
     },
@@ -167,6 +166,7 @@ jest.unstable_mockModule('../db', () => {
 
       findMany: async ({ where, orderBy, skip, take, select }: any) => {
         let out = applyWhere(items, where ?? {});
+
         // orderBy add_date desc
         if (orderBy?.add_date === 'desc') {
           out.sort((a, b) => new Date(b.add_date).getTime() - new Date(a.add_date).getTime());
@@ -175,7 +175,7 @@ jest.unstable_mockModule('../db', () => {
         if (typeof skip === 'number') out = out.slice(skip);
         if (typeof take === 'number') out = out.slice(0, take);
 
-        // map-items uses select with nested images + item_tags.tags
+        // map-items select
         if (select) {
           return out.map((i) => ({
             iid: i.iid,
@@ -257,12 +257,23 @@ jest.unstable_mockModule('../db', () => {
     },
   };
 
-  return { prisma };
+  // helper reset for isolation between tests
+  function __reset() {
+    items.splice(0, items.length);
+    images.splice(0, images.length);
+    itemTags.splice(0, itemTags.length);
+    iidSeq = 1;
+    imidSeq = 1;
+  }
+
+  return { prisma, __reset };
 });
 
 // IMPORTANT: import AFTER mocks
 const { default: itemsRouter } = await import('../routes/items');
 const { default: request } = await import('supertest');
+const db: any = await import('../db');
+const __reset = db.__reset as () => void;
 
 function makeTestApp() {
   const app = express();
@@ -280,8 +291,10 @@ function makeTestApp() {
 describe('Items routes', () => {
   beforeEach(() => {
     jest.restoreAllMocks();
+    __reset();
   });
 
+  // ----------------- YOUR ORIGINAL 5 -----------------
   it('POST /items/addItem -> 401 when not authenticated', async () => {
     const app = makeTestApp();
     const res = await request(app).post('/items/addItem').send({
@@ -293,7 +306,6 @@ describe('Items routes', () => {
       tagIds: [1],
       imageUrls: [],
     });
-
     expect(res.status).toBe(401);
   });
 
@@ -303,28 +315,14 @@ describe('Items routes', () => {
     const res1 = await request(app)
       .post('/items/addItem')
       .set('x-user-id', '1')
-      .send({
-        title: 'x',
-        description: 'y',
-        type: 'INVALID',
-        latitude: 1,
-        longitude: 2,
-        tagIds: [1],
-      });
+      .send({ title: 'x', description: 'y', type: 'INVALID', latitude: 1, longitude: 2, tagIds: [1] });
     expect(res1.status).toBe(400);
     expect(res1.body.error).toMatch(/type must be/i);
 
     const res2 = await request(app)
       .post('/items/addItem')
       .set('x-user-id', '1')
-      .send({
-        title: 'x',
-        description: 'y',
-        type: 'lost',
-        latitude: 999, // invalid
-        longitude: 2,
-        tagIds: [1],
-      });
+      .send({ title: 'x', description: 'y', type: 'lost', latitude: 999, longitude: 2, tagIds: [1] });
     expect(res2.status).toBe(400);
     expect(res2.body.error).toMatch(/invalid latitude/i);
   });
@@ -347,7 +345,7 @@ describe('Items routes', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.title).toBe('Lost phone');
-    expect(res.body.type).toBe('lost'); // normalized
+    expect(res.body.type).toBe('lost');
     expect(Array.isArray(res.body.tags)).toBe(true);
     expect(res.body.tags.length).toBe(2);
   });
@@ -355,7 +353,6 @@ describe('Items routes', () => {
   it('GET /items/map-items -> returns mapped shape (imageUrl + tags)', async () => {
     const app = makeTestApp();
 
-    // create one item via route (also tests transaction paths)
     await request(app)
       .post('/items/addItem')
       .set('x-user-id', '1')
@@ -374,7 +371,7 @@ describe('Items routes', () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.items)).toBe(true);
     expect(res.body.items[0]).toHaveProperty('id');
-    expect(res.body.items[0]).toHaveProperty('imageUrl'); // note: singular in map-items
+    expect(res.body.items[0]).toHaveProperty('imageUrl');
     expect(Array.isArray(res.body.items[0].tags)).toBe(true);
     expect(res.body.items[0].tags[0]).toHaveProperty('tid');
     expect(res.body.items[0].tags[0]).toHaveProperty('tagname');
@@ -383,7 +380,6 @@ describe('Items routes', () => {
   it('GET /items -> supports search + tag filters AND /items/:id permissions', async () => {
     const app = makeTestApp();
 
-    // item A: tag 1, type lost, title contains "wallet"
     const a = await request(app)
       .post('/items/addItem')
       .set('x-user-id', '1')
@@ -397,7 +393,6 @@ describe('Items routes', () => {
         imageUrls: [],
       });
 
-    // item B: tag 2, type found, title contains "phone"
     await request(app)
       .post('/items/addItem')
       .set('x-user-id', '2')
@@ -411,7 +406,6 @@ describe('Items routes', () => {
         imageUrls: [],
       });
 
-    // filter: searchText=wallet + tagIds=1 (any/all both should match single tag)
     const listRes = await request(app).get('/items').query({
       page: '1',
       limit: '50',
@@ -424,20 +418,341 @@ describe('Items routes', () => {
     expect(listRes.body.items.length).toBe(1);
     expect(listRes.body.items[0].title.toLowerCase()).toContain('wallet');
 
-    // permissions: optionalAuth checks header x-user-id
-    const showResOwner = await request(app)
-      .get(`/items/${a.body.iid ?? a.body.id ?? a.body?.iid}`)
-      .set('x-user-id', '1');
+    const iid = a.body?.iid ?? a.body?.id;
 
-    // NOTE: addItem returns full item shape from prisma.findUnique include
-    // so iid will exist in body if your prisma include returns it. If not, fallback to `a.body.id`.
+    const showResOwner = await request(app).get(`/items/${iid}`).set('x-user-id', '1');
     expect(showResOwner.status).toBe(200);
     expect(showResOwner.body.permissions.canEdit).toBe(true);
     expect(showResOwner.body.permissions.canDelete).toBe(true);
 
-    const showResAnon = await request(app).get(`/items/${a.body.iid ?? a.body.id ?? a.body?.iid}`);
+    const showResAnon = await request(app).get(`/items/${iid}`);
     expect(showResAnon.status).toBe(200);
     expect(showResAnon.body.permissions.canEdit).toBe(false);
     expect(showResAnon.body.permissions.canDelete).toBe(false);
+  });
+
+  // ----------------- 10 NEW TESTS -----------------
+
+  it('POST /items/addItem -> 400 when title missing', async () => {
+    const app = makeTestApp();
+    const res = await request(app).post('/items/addItem').set('x-user-id', '1').send({
+      description: 'd',
+      type: 'lost',
+      latitude: 10,
+      longitude: 10,
+      tagIds: [1],
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/title is required/i);
+  });
+
+  it('POST /items/addItem -> 400 when description missing', async () => {
+    const app = makeTestApp();
+    const res = await request(app).post('/items/addItem').set('x-user-id', '1').send({
+      title: 't',
+      type: 'lost',
+      latitude: 10,
+      longitude: 10,
+      tagIds: [1],
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/description is required/i);
+  });
+
+  it('POST /items/addItem -> 400 when latitude/longitude not numbers', async () => {
+    const app = makeTestApp();
+    const res = await request(app).post('/items/addItem').set('x-user-id', '1').send({
+      title: 't',
+      description: 'd',
+      type: 'lost',
+      latitude: '35.7',
+      longitude: '51.3',
+      tagIds: [1],
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/latitude and longitude are required/i);
+  });
+
+  it('POST /items/addItem -> 400 when longitude invalid', async () => {
+    const app = makeTestApp();
+    const res = await request(app).post('/items/addItem').set('x-user-id', '1').send({
+      title: 't',
+      description: 'd',
+      type: 'lost',
+      latitude: 10,
+      longitude: 999,
+      tagIds: [1],
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid longitude/i);
+  });
+
+  it('POST /items/addItem -> 500 when tagIds include non-existing tag', async () => {
+    const app = makeTestApp();
+    const res = await request(app).post('/items/addItem').set('x-user-id', '1').send({
+      title: 't',
+      description: 'd',
+      type: 'lost',
+      latitude: 10,
+      longitude: 10,
+      tagIds: [999],
+      imageUrls: [],
+    });
+    // because your route throws Error(...) which goes to error handler
+    expect(res.status).toBe(500);
+    expect(res.body.error).toMatch(/tags do not exist/i);
+  });
+
+  it('GET /items/count -> returns correct count after inserts', async () => {
+    const app = makeTestApp();
+
+    await request(app).post('/items/addItem').set('x-user-id', '1').send({
+      title: 'A',
+      description: 'd',
+      type: 'lost',
+      latitude: 1,
+      longitude: 1,
+      tagIds: [1],
+      imageUrls: [],
+    });
+
+    await request(app).post('/items/addItem').set('x-user-id', '1').send({
+      title: 'B',
+      description: 'd',
+      type: 'found',
+      latitude: 2,
+      longitude: 2,
+      tagIds: [2],
+      imageUrls: [],
+    });
+
+    const res = await request(app).get('/items/count');
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+  });
+
+  it('GET /items -> supports pagination (page/limit)', async () => {
+    const app = makeTestApp();
+
+    for (let i = 0; i < 7; i++) {
+      await request(app).post('/items/addItem').set('x-user-id', '1').send({
+        title: `Item ${i}`,
+        description: 'd',
+        type: i % 2 === 0 ? 'lost' : 'found',
+        latitude: 10 + i,
+        longitude: 10 + i,
+        tagIds: [1],
+        imageUrls: [],
+      });
+    }
+
+    const res = await request(app).get('/items').query({ page: '2', limit: '3' });
+    expect(res.status).toBe(200);
+    expect(res.body.items.length).toBe(3);
+    expect(res.body.pagination.page).toBe(2);
+    expect(res.body.pagination.limit).toBe(3);
+  });
+
+  it('GET /items -> supports bounding box filtering', async () => {
+    const app = makeTestApp();
+
+    await request(app).post('/items/addItem').set('x-user-id', '1').send({
+      title: 'Inside',
+      description: 'd',
+      type: 'lost',
+      latitude: 35.70,
+      longitude: 51.35,
+      tagIds: [1],
+      imageUrls: [],
+    });
+
+    await request(app).post('/items/addItem').set('x-user-id', '1').send({
+      title: 'Outside',
+      description: 'd',
+      type: 'lost',
+      latitude: 50,
+      longitude: 50,
+      tagIds: [1],
+      imageUrls: [],
+    });
+
+    const res = await request(app).get('/items').query({
+      minLat: '35.6',
+      maxLat: '35.8',
+      minLong: '51.3',
+      maxLong: '51.4',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.items.length).toBe(1);
+    expect(res.body.items[0].title).toBe('Inside');
+  });
+
+  it('GET /items -> tagMode=all requires all tags', async () => {
+    const app = makeTestApp();
+
+    await request(app).post('/items/addItem').set('x-user-id', '1').send({
+      title: 'Both tags',
+      description: 'd',
+      type: 'lost',
+      latitude: 1,
+      longitude: 1,
+      tagIds: [1, 2],
+      imageUrls: [],
+    });
+
+    await request(app).post('/items/addItem').set('x-user-id', '1').send({
+      title: 'Only one',
+      description: 'd',
+      type: 'lost',
+      latitude: 2,
+      longitude: 2,
+      tagIds: [1],
+      imageUrls: [],
+    });
+
+    const res = await request(app).get('/items').query({
+      tagIds: '1,2',
+      tagMode: 'all',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.items.length).toBe(1);
+    expect(res.body.items[0].title).toBe('Both tags');
+  });
+
+  it('GET /items -> type filter works (lost/found)', async () => {
+    const app = makeTestApp();
+
+    await request(app).post('/items/addItem').set('x-user-id', '1').send({
+      title: 'Lost A',
+      description: 'd',
+      type: 'lost',
+      latitude: 1,
+      longitude: 1,
+      tagIds: [1],
+      imageUrls: [],
+    });
+
+    await request(app).post('/items/addItem').set('x-user-id', '1').send({
+      title: 'Found B',
+      description: 'd',
+      type: 'found',
+      latitude: 2,
+      longitude: 2,
+      tagIds: [1],
+      imageUrls: [],
+    });
+
+    const res = await request(app).get('/items').query({ type: 'found' });
+    expect(res.status).toBe(200);
+    expect(res.body.items.length).toBe(1);
+    expect(res.body.items[0].title).toBe('Found B');
+  });
+
+  it('GET /items/:id -> 404 when item not found', async () => {
+    const app = makeTestApp();
+    const res = await request(app).get('/items/9999');
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/item not found/i);
+  });
+
+  it('PATCH /items/:id -> 403 if not owner', async () => {
+    const app = makeTestApp();
+
+    const created = await request(app).post('/items/addItem').set('x-user-id', '1').send({
+      title: 'Mine',
+      description: 'd',
+      type: 'lost',
+      latitude: 1,
+      longitude: 1,
+      tagIds: [1],
+      imageUrls: [],
+    });
+
+    const iid = created.body?.iid ?? created.body?.id;
+
+    const res = await request(app)
+      .patch(`/items/${iid}`)
+      .set('x-user-id', '2')
+      .send({ title: 'Hacked', tagIds: [1] });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/not allowed/i);
+  });
+
+  it('PATCH /items/:id -> updates title/desc/type and replaces tags', async () => {
+    const app = makeTestApp();
+
+    const created = await request(app).post('/items/addItem').set('x-user-id', '1').send({
+      title: 'Old',
+      description: 'old desc',
+      type: 'lost',
+      latitude: 1,
+      longitude: 1,
+      tagIds: [1],
+      imageUrls: [],
+    });
+
+    const iid = created.body?.iid ?? created.body?.id;
+
+    const res = await request(app)
+      .patch(`/items/${iid}`)
+      .set('x-user-id', '1')
+      .send({
+        title: 'New',
+        description: 'new desc',
+        type: 'found',
+        tagIds: [2, 3],
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.title).toBe('New');
+    expect(res.body.description).toBe('new desc');
+    expect(res.body.type).toBe('found');
+    expect(Array.isArray(res.body.tags)).toBe(true);
+    expect(res.body.tags.length).toBe(2);
+  });
+
+  it('DELETE /items/:id -> 403 if not owner', async () => {
+    const app = makeTestApp();
+
+    const created = await request(app).post('/items/addItem').set('x-user-id', '1').send({
+      title: 'Mine',
+      description: 'd',
+      type: 'lost',
+      latitude: 1,
+      longitude: 1,
+      tagIds: [1],
+      imageUrls: [],
+    });
+
+    const iid = created.body?.iid ?? created.body?.id;
+
+    const res = await request(app).delete(`/items/${iid}`).set('x-user-id', '2');
+    expect(res.status).toBe(403);
+  });
+
+  it('DELETE /items/:id -> deletes when owner', async () => {
+    const app = makeTestApp();
+
+    const created = await request(app).post('/items/addItem').set('x-user-id', '1').send({
+      title: 'Mine',
+      description: 'd',
+      type: 'lost',
+      latitude: 1,
+      longitude: 1,
+      tagIds: [1],
+      imageUrls: [],
+    });
+
+    const iid = created.body?.iid ?? created.body?.id;
+
+    const delRes = await request(app).delete(`/items/${iid}`).set('x-user-id', '1');
+    expect(delRes.status).toBe(200);
+    expect(delRes.body.success).toBe(true);
+
+    const showRes = await request(app).get(`/items/${iid}`);
+    expect(showRes.status).toBe(404);
   });
 });

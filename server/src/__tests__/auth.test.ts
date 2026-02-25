@@ -10,12 +10,19 @@ jest.unstable_mockModule('../utils/mailer', () => ({
   sendOtpEmail: async () => undefined,
 }));
 
-// --- in-memory prisma mock
+// --- in-memory prisma mock (with reset)
 jest.unstable_mockModule('../db', () => {
   const users: any[] = [];
   const otps: any[] = [];
   let uidSeq = 1;
   let oidSeq = 1;
+
+  const __reset = () => {
+    users.length = 0;
+    otps.length = 0;
+    uidSeq = 1;
+    oidSeq = 1;
+  };
 
   const prisma = {
     users: {
@@ -62,11 +69,16 @@ jest.unstable_mockModule('../db', () => {
     },
   };
 
-  return { prisma };
+  return { prisma, __reset };
 });
 
 // IMPORTANT: import AFTER mocks are defined
 const { default: authRouter } = await import('../routes/auth');
+const db: any = await import('../db');
+const __reset = db.__reset as () => void;
+
+// supertest import that works reliably with ESM + TS
+const { default: request } = await import('supertest');
 
 function makeTestApp() {
   const app = express();
@@ -75,13 +87,15 @@ function makeTestApp() {
   return app;
 }
 
-// supertest import that works reliably with ESM + TS
-const { default: request } = await import('supertest');
-
 describe('Auth routes', () => {
   beforeEach(() => {
     jest.restoreAllMocks();
+    __reset();
   });
+
+  // -----------------------------
+  // Existing tests (your 5)
+  // -----------------------------
 
   it('register: 400 if missing fields', async () => {
     const app = makeTestApp();
@@ -186,5 +200,86 @@ describe('Auth routes', () => {
     expect(res.status).toBe(200);
     expect(res.body.token).toBe('TEST_TOKEN');
     expect(res.body.user.username).toBe('loginuser2');
+  });
+
+  // -----------------------------
+  // NEW tests (5 more)
+  // -----------------------------
+
+  it('register: 400 for invalid email format', async () => {
+    const app = makeTestApp();
+    const res = await request(app).post('/auth/register').send({
+      email: 'not-an-email',
+      username: 'user123',
+      password: 'Aa1!aaaa',
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid email format/i);
+  });
+
+  it('register: 400 for username shorter than 3', async () => {
+    const app = makeTestApp();
+    const res = await request(app).post('/auth/register').send({
+      email: 'u3@example.com',
+      username: 'ab',
+      password: 'Aa1!aaaa',
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/at least 3 characters/i);
+  });
+
+  it('register: 400 for weak password', async () => {
+    const app = makeTestApp();
+    const res = await request(app).post('/auth/register').send({
+      email: 'weakpw@example.com',
+      username: 'weakpwuser',
+      password: 'password', // weak (no uppercase/number/special)
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Password must be at least 8/i);
+  });
+
+  it('register: 400 if email already registered', async () => {
+    const realRandom = Math.random;
+    Math.random = () => 0;
+
+    const app = makeTestApp();
+
+    await request(app).post('/auth/register').send({
+      email: 'dup@example.com',
+      username: 'dupuser1',
+      password: 'Aa1!aaaa',
+    });
+
+    await request(app).post('/auth/verify-otp').send({
+      email: 'dup@example.com',
+      otp: '100000',
+    });
+
+    const res2 = await request(app).post('/auth/register').send({
+      email: 'dup@example.com',
+      username: 'dupuser2',
+      password: 'Aa1!aaaa',
+    });
+
+    Math.random = realRandom;
+
+    expect(res2.status).toBe(400);
+    expect(res2.body.error).toMatch(/email already registered/i);
+  });
+
+  it('verify-otp: 400 for invalid or expired OTP', async () => {
+    const app = makeTestApp();
+
+    const res = await request(app).post('/auth/verify-otp').send({
+      email: 'nope@example.com',
+      otp: '999999',
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/invalid or expired otp/i);
   });
 });
