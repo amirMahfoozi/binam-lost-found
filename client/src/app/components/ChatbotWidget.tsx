@@ -20,6 +20,21 @@ function uid() {
   return Math.random().toString(36).slice(2);
 }
 
+function uniqueKeywords(keywords: string[], max = 5): string[] {
+  const uniq: string[] = [];
+  const seen = new Set<string>();
+  for (const k of keywords) {
+    const kw = String(k ?? "").trim();
+    if (!kw) continue;
+    const norm = kw.toLowerCase();
+    if (seen.has(norm)) continue;
+    seen.add(norm);
+    uniq.push(kw);
+    if (uniq.length >= max) break;
+  }
+  return uniq;
+}
+
 function intersectById<T extends { id: number }>(lists: T[][]): T[] {
   if (lists.length === 0) return [];
   if (lists.length === 1) return lists[0];
@@ -40,9 +55,23 @@ function intersectById<T extends { id: number }>(lists: T[][]): T[] {
     .map((x) => x.item);
 }
 
-function itemToSuggestion(item: any): ChatbotSuggestion {
-  const imageUrl =
-    item?.imageUrls ?? item?.imageUrl ?? item?.images?.[0]?.image_url ?? null;
+// Soft intersection: union + score by "how many keyword lists contained it"
+function rankByOverlap<T extends { id: number }>(lists: T[][]): Array<{ item: T; score: number }> {
+  const map = new Map<number, { item: T; score: number }>();
+
+  for (const list of lists) {
+    for (const it of list) {
+      const prev = map.get(it.id);
+      if (!prev) map.set(it.id, { item: it, score: 1 });
+      else map.set(it.id, { item: prev.item, score: prev.score + 1 });
+    }
+  }
+
+  return [...map.values()].sort((a, b) => b.score - a.score);
+}
+
+function itemToSuggestion(item: any, score: number): ChatbotSuggestion {
+  const imageUrl = item?.imageUrls ?? item?.imageUrl ?? item?.images?.[0]?.image_url ?? null;
 
   return {
     id: Number(item.id),
@@ -50,7 +79,7 @@ function itemToSuggestion(item: any): ChatbotSuggestion {
     type: String(item.type ?? ""),
     imageUrl: imageUrl ? String(imageUrl) : null,
     descriptionSnippet: String(item.description ?? "").slice(0, 120),
-    score: 1, // not used now; required by type
+    score,
     link: `/items/${item.id}`,
   };
 }
@@ -97,38 +126,57 @@ export function ChatbotWidget() {
     try {
       const res: ChatbotResponse = await sendChatbotMessage(text);
 
-      const keywords = Array.isArray(res.keywords) ? res.keywords : [];
+      const kwsRaw = Array.isArray(res.keywords) ? res.keywords : [];
+      const keywords = uniqueKeywords(kwsRaw as any, 5);
 
+      // If no keywords, keep old behavior
       if (keywords.length === 0) {
         setMessages((m) => [
           ...m,
-          {
-            id: uid(),
-            from: "bot",
-            text: res.reply,
-            suggestions: res.suggestions ?? [],
-          },
+          { id: uid(), from: "bot", text: res.reply, suggestions: res.suggestions ?? [] },
         ]);
         return;
       }
 
-      const trimmedKeywords = keywords
-        .map((k) => String(k).trim())
-        .filter((k) => k.length > 0)
-        .slice(0, 5);
-
+      // 1) fetch /items for each keyword
       const lists = await Promise.all(
-        trimmedKeywords.map(async (kw) => {
+        keywords.map(async (kw) => {
           const data = await loadItems({ searchText: kw });
           return data.items ?? [];
         })
       );
 
-      const intersected = intersectById(lists);
+      // 2) drop empty lists (prevents "one bad keyword => empty intersection")
+      const nonEmptyLists = lists.filter((lst) => Array.isArray(lst) && lst.length > 0);
 
-      const suggestions: ChatbotSuggestion[] = intersected
-        .slice(0, 6)
-        .map(itemToSuggestion);
+      let suggestions: ChatbotSuggestion[] = [];
+
+      if (nonEmptyLists.length === 0) {
+        // none matched anything
+        suggestions = [];
+      } else {
+        // 3) strict intersection on remaining lists
+        let intersected = intersectById(nonEmptyLists);
+
+        // 4) progressive relaxation if still empty
+        // try with fewer keyword lists (start strict, then loosen)
+        if (intersected.length === 0 && nonEmptyLists.length >= 3) {
+          for (let k = nonEmptyLists.length - 1; k >= 2; k--) {
+            intersected = intersectById(nonEmptyLists.slice(0, k));
+            if (intersected.length > 0) break;
+          }
+        }
+
+        if (intersected.length > 0) {
+          // keep intersection results; score = how many lists we intersected
+          const used = Math.min(nonEmptyLists.length, 5);
+          suggestions = intersected.slice(0, 6).map((it: any) => itemToSuggestion(it, used));
+        } else {
+          // 5) final fallback: soft intersection (rank by overlap)
+          const ranked = rankByOverlap(nonEmptyLists);
+          suggestions = ranked.slice(0, 6).map(({ item, score }) => itemToSuggestion(item, score));
+        }
+      }
 
       setMessages((m) => [
         ...m,
