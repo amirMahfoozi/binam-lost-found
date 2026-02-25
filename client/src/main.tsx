@@ -1,13 +1,17 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
-// import App from "./app/App";
-import AppWrapper from "./app/App";
-import "./index.css";
-import "leaflet/dist/leaflet.css";
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import AppWrapper from './app/App';
+import './index.css';
+import 'leaflet/dist/leaflet.css';
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
+// ✅ Vite-PWA helper (NOT workbox-window)
+import { registerSW } from 'virtual:pwa-register';
+
+ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    {/* <App /> */}
     <AppWrapper />
   </React.StrictMode>
 );
+
+// ✅ register service worker (enables caching/offline)
+registerSW({ immediate: true });

@@ -10,7 +10,7 @@ import {
 } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Link } from "react-router-dom";
-import { MessageCircle } from "lucide-react";
+import { MessageCircle, ArrowLeft } from "lucide-react";
 
 export type Item = {
   id: number;
@@ -253,7 +253,11 @@ export default function ItemsList() {
             const commentCount = commentCountByItemId[item.id] ?? 0;
 
             return (
-              <Link to={"/items/" + item.id} key={item.id} style={{ textDecoration: "none" }}>
+              <Link
+                to={"/items/" + item.id}
+                key={item.id}
+                style={{ textDecoration: "none" }}
+              >
                 <div className={`item-card ${typeLabel === "FOUND" ? "found" : "lost"}`}>
                   <div className="item-image">
                     {imgSrc ? <img src={imgSrc} alt={item.title} /> : <div className="placeholder">No image</div>}
@@ -313,9 +317,15 @@ export default function ItemsList() {
         <button onClick={() => goto(totalPages)} disabled={count !== null && page >= totalPages}>Last</button>
       </div>
 
-      <Link to="/dashboard">
-        <Button>Back</Button>
-      </Link>
+      {/* ✅ Back as a real button */}
+      <div style={{ display: "flex", justifyContent: "center", marginTop: 14 }}>
+        <Link to="/dashboard" style={{ textDecoration: "none" }}>
+          <Button className="gap-2">
+            <ArrowLeft size={16} />
+            Back to Dashboard
+          </Button>
+        </Link>
+      </div>
     </div>
   );
 }

@@ -40,6 +40,27 @@ function userExists() {
   return localStorage.getItem("user") !== null;
 }
 
+function AuthShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center px-4"
+      style={{
+        backgroundImage: 'url(/Sharif_University_of_Technology.jpg)',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      }}
+    >
+      {/* overlay */}
+      <div className="absolute inset-0 bg-black/55" />
+
+      {/* content */}
+      <div className="relative z-10 w-full max-w-md">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const navigate = useNavigate();
 
@@ -103,63 +124,65 @@ return (
 
         {/* Auth pages centered */}
         <Route
-          path="/login"
-          element={
-            !userExists() ? (
-              <div className="flex items-center justify-center">
-                <div className="w-full max-w-md">
-                  <LoginForm
-                    onLoginSuccess={handleLoginSuccess}
-                    onSwitchToRegister={() => navigate("/register")}
-                  />
-                </div>
-              </div>
-            ) : (
-              <Navigate to="/dashboard" replace />
-            )
-          }
+  path="/login"
+  element={
+    !userExists() ? (
+      <AuthShell>
+        <LoginForm
+          onLoginSuccess={handleLoginSuccess}
+          onSwitchToRegister={() => navigate('/register')}
         />
+      </AuthShell>
+    ) : (
+      <Navigate to="/dashboard" replace />
+    )
+  }
+/>
 
-        <Route
-          path="/register"
-          element={
-            <div className="flex items-center justify-center">
-              <div className="w-full max-w-md">
-                <RegisterForm
-                  onRegisterSuccess={(email, username, password) => {
-                    handleRegisterSuccess(email, username, password);
-                    navigate("/verify-email");
-                  }}
-                  onSwitchToLogin={() => navigate("/login")}
-                />
-              </div>
-            </div>
-          }
+<Route
+  path="/register"
+  element={
+    !userExists() ? (
+      <AuthShell>
+        <RegisterForm
+          onRegisterSuccess={(email, username, password) => {
+            handleRegisterSuccess(email, username, password);
+            navigate('/verify-email');
+          }}
+          onSwitchToLogin={() => navigate('/login')}
         />
+      </AuthShell>
+    ) : (
+      <Navigate to="/dashboard" replace />
+    )
+  }
+/>
 
-        <Route
-          path="/verify-email"
-          element={
-            userEmail ? (
-              <div className="flex items-center justify-center">
-                <div className="w-full max-w-md">
-                  <EmailVerification
-                    email={userEmail}
-                    username={registerUsername}
-                    password={registerPassword}
-                    onVerificationComplete={(t, u) => {
-                      handleVerificationComplete(t, u);
-                      navigate("/dashboard", { replace: true });
-                    }}
-                    onBackToRegister={() => navigate("/register")}
-                  />
-                </div>
-              </div>
-            ) : (
-              <Navigate to="/register" replace />
-            )
-          }
-        />
+<Route
+  path="/verify-email"
+  element={
+    !userExists() ? (
+      userEmail ? (
+        <AuthShell>
+          <EmailVerification
+            email={userEmail}
+            username={registerUsername}
+            password={registerPassword}
+            onVerificationComplete={(t, u) => {
+              handleVerificationComplete(t, u);
+              navigate('/dashboard', { replace: true });
+            }}
+            onBackToRegister={() => navigate('/register')}
+          />
+        </AuthShell>
+      ) : (
+        <Navigate to="/register" replace />
+      )
+    ) : (
+      <Navigate to="/dashboard" replace />
+    )
+  }
+/>
 
         {/* App pages full width */}
         <Route

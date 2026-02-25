@@ -274,7 +274,7 @@ export function MapModal({ open, onClose }: MapModalProps) {
   const [items, setItems] = useState<MapItem[]>([]);
   const [loadingPins, setLoadingPins] = useState(false);
   const [pinsError, setPinsError] = useState<string | null>(null);
-
+  const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
   const [pickPos, setPickPos] = useState<[number, number]>(FALLBACK_CENTER);
 
   // ✅ show message if location cannot be determined
@@ -339,6 +339,17 @@ export function MapModal({ open, onClose }: MapModalProps) {
       }
     );
   }, [open]);
+
+  useEffect(() => {
+    const onUp = () => setIsOnline(true);
+    const onDown = () => setIsOnline(false);
+    window.addEventListener('online', onUp);
+    window.addEventListener('offline', onDown);
+    return () => {
+      window.removeEventListener('online', onUp);
+      window.removeEventListener('offline', onDown);
+    };
+  }, []);
 
   // Load items/tags whenever map opens OR filters/search change
   useEffect(() => {
@@ -429,6 +440,7 @@ export function MapModal({ open, onClose }: MapModalProps) {
             {loadingPins && <p className="text-xs text-gray-500">Loading pins…</p>}
             {pinsError && <p className="text-xs text-red-600">{pinsError}</p>}
             {geoError && <p className="text-xs text-amber-600">{geoError}</p>}
+            {!isOnline && <p className="text-xs text-amber-600">Offline mode: showing cached map</p>}
           </div>
 
           <button
